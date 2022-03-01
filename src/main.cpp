@@ -21,7 +21,7 @@ void setup() {
   Serial.begin(9600);
   Serial.println();
   button.setDebounceTime(50);
-  digitalWrite(Mos2, 0);
+  digitalWrite(Mos2, 0);        // start Headlight in off state
   digitalWrite(Mos1, 0);
 }
 
@@ -33,32 +33,34 @@ void loop() {
     lastPressed = millis();
   }
 
-  if (button.getState() == LOW && released && millis() - lastPressed > LONG_PRESS_TIME) {
+  // turn System on and off
+  if (button.getState() == LOW && released && millis() - lastPressed > LONG_PRESS_TIME) {   
     released = false;
-    state = !state;
+    state = !state; 
   }
 
   if (button.isReleased()) {
     released = true;
     if (millis() - lastPressed < LONG_PRESS_TIME && state) {
+      // change lighting effect
       Serial.println("short");
     }
   }
-// 3-450, 450-540, 540-1023 
+  // 0-450, 450-540, 540-1024 (potentiometer reading)
   if (state) {
     // volt = analogRead(A6);
     // shift = 52224 * 3.55 / volt;
-    // Serial.println(analogRead(Potentio)); 
-    potValue = analogRead(Potentio);
-    // pwm = map(potValue, 0, 1024, 0, 255);
+    Serial.println(analogRead(Potentio)); 
+    potValue = analogRead(Potentio);        // Potentiometer Reading (0 - 1024)
+    // pwm = map(potValue, 0, 1024, 0, 255);  	// Potentiometer Reading mapped to pwm
     // analogWrite(A6, potValue);
     // Serial.println(analogRead(5));
-    if (potValue < 450){
+    if (potValue < 450){  
       // pwm = map(potValue, 450, 0, shift * 9, shift * 12);
       pwm = map(potValue, 0, 450, 255, 0);
       analogWrite(Mos1, pwm);
     }
-    else if(potValue < 540){
+    else if(potValue < 540){    // off
       analogWrite(Mos1, 0);
       analogWrite(Mos2, 0);
     }
@@ -68,10 +70,6 @@ void loop() {
     }
 
   }
-
-  
-  // bool newState = digitalRead(Button);
-  // Serial.println(state);
 
   // Serial.println(digitalRead(2));
 }
