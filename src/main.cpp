@@ -5,7 +5,6 @@
 #include <ezButton.h>
 #include <WS2812FX.h>
 
-
 // Pindefinitions +++++++++++++++++
 
 #define Button 2  // Button
@@ -25,6 +24,12 @@ unsigned long lastPressed = millis();
 int potValue, pwm;
 double volt, shift;
 
+int currentEffect;
+const int effects[] = {0, 1, 2, 3, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 27, 33, 39, 42};
+
+void changeEffect();
+long hsvToHex(double hue);
+
 void setup() {
   Serial.begin(9600);
   Serial.println();
@@ -34,6 +39,7 @@ void setup() {
   ws2812fx.init();
   ws2812fx.setBrightness(150);
   ws2812fx.setSpeed(200);
+  ws2812fx.setColor(ORANGE);
   ws2812fx.start();
 
   digitalWrite(Mos2, 0);        // start Headlight in off state
@@ -59,6 +65,7 @@ void loop() {
     released = true;
     if (millis() - lastPressed < LONG_PRESS_TIME && state) {
       // change lighting effect
+      changeEffect();
       Serial.println("short");
     }
   }
@@ -87,41 +94,54 @@ void loop() {
 
   }
 
-  // Serial.println(digitalRead(2));
+  Serial.println(digitalRead(2));
 }
 
-void hsvToHex(double hue, uint8_t& red, uint8_t& green, uint8_t& blue) {
+void changeEffect() {
+  currentEffect++;
+  if (currentEffect == sizeof(effects) / sizeof(int)) {
+    currentEffect = 0;
+  }
+  ws2812fx.setMode(currentEffect);
+}
+
+long hsvToHex(double hue) {
+  double s, v;
+  s = 1;
+  v = 1;
   double r, g, b;
 
   auto i = static_cast<int>(hue * 6);
   auto f = hue * 6 - i;
-  auto p = 255 * (1 - 255);
-  auto q = 255 * (1 - f * 255);
-  auto t = 255 * (1 - (1 - f) * 255);
+  auto p = v * (1 - s);
+  auto q = v * (1 - f * s);
+  auto t = v * (1 - (1 - f) * s);
 
   switch (i % 6) {
     case 0:
-      r = 255, g = t, b = p;
+      r = v, g = t, b = p;
       break;
     case 1:
-      r = q, g = 255, b = p;
+      r = q, g = v, b = p;
       break;
     case 2:
-      r = p, g = 255, b = t;
+      r = p, g = v, b = t;
       break;
     case 3:
-      r = p, g = q, b = 255;
+      r = p, g = q, b = v;
       break;
     case 4:
-      r = t, g = p, b = 255;
+      r = t, g = p, b = v;
       break;
     case 5:
-      r = 255, g = p, b = q;
+      r = v, g = p, b = q;
       break;
   }
-  red = static_cast<byte>(r * 255);
-  green = static_cast<byte>(g * 255);
-  blue = static_cast<byte>(b * 255);
+  uint8_t red = static_cast<uint8_t>(r * 255);
+  uint8_t green = static_cast<uint8_t>(g * 255);
+  uint8_t blue = static_cast<uint8_t>(b * 255);
 
+  // Serial.print(red); Serial.print(" "); Serial.print(green); Serial.print(" "); Serial.println(blue);
   long RGB = ((long)red << 16L) | ((long)green << 8L) | (long)blue;
+  return RGB;
 }
