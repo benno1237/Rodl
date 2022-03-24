@@ -43,6 +43,7 @@ void setup() {
 
 void loop() {
   button.loop();
+  ws2812fx.service();
 
   if (button.isPressed()) {
     lastPressed = millis();
@@ -87,4 +88,40 @@ void loop() {
   }
 
   // Serial.println(digitalRead(2));
+}
+
+void hsvToHex(double hue, uint8_t& red, uint8_t& green, uint8_t& blue) {
+  double r, g, b;
+
+  auto i = static_cast<int>(hue * 6);
+  auto f = hue * 6 - i;
+  auto p = 255 * (1 - 255);
+  auto q = 255 * (1 - f * 255);
+  auto t = 255 * (1 - (1 - f) * 255);
+
+  switch (i % 6) {
+    case 0:
+      r = 255, g = t, b = p;
+      break;
+    case 1:
+      r = q, g = 255, b = p;
+      break;
+    case 2:
+      r = p, g = 255, b = t;
+      break;
+    case 3:
+      r = p, g = q, b = 255;
+      break;
+    case 4:
+      r = t, g = p, b = 255;
+      break;
+    case 5:
+      r = 255, g = p, b = q;
+      break;
+  }
+  red = static_cast<byte>(r * 255);
+  green = static_cast<byte>(g * 255);
+  blue = static_cast<byte>(b * 255);
+
+  long RGB = ((long)red << 16L) | ((long)green << 8L) | (long)blue;
 }
