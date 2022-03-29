@@ -8,7 +8,7 @@
 // Pindefinitions +++++++++++++++++
 
 #define Button 2  // Button
-#define Potentio A7  // Potentiometer
+#define POT_PIN A7  // Potentiometer
 #define Mos1 5   // Mosfet1
 #define Mos2 6   // Mosfet29
 
@@ -18,11 +18,10 @@
 ezButton button(Button);
 WS2812FX ws2812fx = WS2812FX(numLed, ledPin, NEO_RGB + NEO_KHZ800);
 
-const int LONG_PRESS_TIME = 3000; // 3000 milliseconds (3 secs)
+const uint8_t LONG_PRESS_TIME = 3000; // 3000 milliseconds (3 secs)
 bool released = true, state = false;
 unsigned long lastPressed = millis();
-int potValue, pwm;
-double volt, shift;
+uint8_t potValue, prevPotValue, pwm;
 
 int currentEffect;
 const int effects[] = {0, 1, 2, 3, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 27, 33, 39, 42};
@@ -54,12 +53,13 @@ void loop() {
   ws2812fx.service();
 
   if (button.isPressed()) {
+    prevPotValue = analogRead(POT_PIN);
     lastPressed = millis();
   }
 
   // turn System on and off
-  if (button.getState() == LOW && released && millis() - lastPressed > LONG_PRESS_TIME) {   
-    released = false;
+  if (button.getState() == LOW && released && millis() - lastPressed > LONG_PRESS_TIME) {
+    released = false;   
     state = !state; 
 
     if (state) {
@@ -74,34 +74,38 @@ void loop() {
 
   if (button.isReleased()) {
     released = true;
+    
     if (millis() - lastPressed < LONG_PRESS_TIME && state) {
-      // change lighting effect
+      // Short press
       changeEffect();
     }
   }
+
   // 0-450, 450-540, 540-1024 (potentiometer reading)
   if (state) {
-    // // volt = analogRead(A6);
-    // // shift = 52224 * 3.55 / volt;
-    // potValue = analogRead(Potentio);        // Potentiometer Reading (0 - 1024)
-    // // pwm = map(potValue, 0, 1024, 0, 255);  	// Potentiometer Reading mapped to pwm
-    // // analogWrite(A6, potValue);
-    // // Serial.println(analogRead(5));
-    // if (potValue < 450){  
-    //   // pwm = map(potValue, 450, 0, shift * 9, shift * 12);
-    //   pwm = map(potValue, 0, 450, 255, 0);
-    //   analogWrite(Mos1, pwm);
-    // }
-    // else if(potValue < 540){    // off
-    //   digitalWrite(Mos1, 0);
-    //   digitalWrite(Mos2, 0);
-    // }
-    // else{
-    //   pwm = map(potValue, 540, 1024, 0, 255);
-    //   analogWrite(Mos2, pwm);
-    // }
-    // Serial.print(red); Serial.print(" "); Serial.print(green); Serial.print(" "); Serial.println(blue);
-    changeColor();
+    potValue = analogRead(POT_PIN);
+
+    if (button.isPressed()) {
+      if (!(prevPotValue - 20 < potValue < prevPotValue + 20) || !released) {
+        changeColor();
+        released = false;
+      }
+    }
+
+    else {      
+      if (potValue < 450) {
+        pwm = map(potValue, 0, 450, 255, 0);
+        analogWrite(Mos1, pwm);
+      }
+      else if (potValue < 540) {
+        digitalWrite(Mos1, 0);
+        digitalWrite(Mos2, 0);
+      }
+      else {
+        pwm = map(potValue, 540, 1024, 255, 0);
+        analogWrite(Mos2, pwm);
+      }
+    }
   }
 }
 
@@ -114,7 +118,7 @@ void changeEffect() {
 }
 
 void changeColor() {
-  potValue = analogRead(Potentio);
+  potValue = analogRead(POT_PIN);
   double hue = map(potValue, 0, 1024, 0, 1000) / 1000.0;
   hsvToHex(hue, red, green, blue);
   ws2812fx.setColor(red, green, blue);
