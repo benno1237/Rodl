@@ -26,9 +26,11 @@ double volt, shift;
 
 int currentEffect;
 const int effects[] = {0, 1, 2, 3, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 27, 33, 39, 42};
+uint8_t red, green, blue;
 
 void changeEffect();
-long hsvToHex(double hue);
+void changeColor();
+void hsvToHex(double hue, uint8_t& red, uint8_t& green, uint8_t& blue);
 
 void setup() {
   Serial.begin(9600);
@@ -39,7 +41,7 @@ void setup() {
   ws2812fx.init();
   ws2812fx.setBrightness(150);
   ws2812fx.setSpeed(200);
-  ws2812fx.setColor(ORANGE);
+  ws2812fx.setColor(0, 0, 0);
   ws2812fx.start();
 
   digitalWrite(Mos2, 0);        // start Headlight in off state
@@ -59,6 +61,15 @@ void loop() {
   if (button.getState() == LOW && released && millis() - lastPressed > LONG_PRESS_TIME) {   
     released = false;
     state = !state; 
+
+    if (state) {
+      changeColor();
+    }
+    else {
+      // ws2812fx.strip_off();
+      ws2812fx.setColor(0, 0, 0);
+      ws2812fx.setMode(0);
+    }
   }
 
   if (button.isReleased()) {
@@ -66,35 +77,32 @@ void loop() {
     if (millis() - lastPressed < LONG_PRESS_TIME && state) {
       // change lighting effect
       changeEffect();
-      Serial.println("short");
     }
   }
   // 0-450, 450-540, 540-1024 (potentiometer reading)
   if (state) {
-    // volt = analogRead(A6);
-    // shift = 52224 * 3.55 / volt;
-    Serial.println(analogRead(Potentio)); 
-    potValue = analogRead(Potentio);        // Potentiometer Reading (0 - 1024)
-    // pwm = map(potValue, 0, 1024, 0, 255);  	// Potentiometer Reading mapped to pwm
-    // analogWrite(A6, potValue);
-    // Serial.println(analogRead(5));
-    if (potValue < 450){  
-      // pwm = map(potValue, 450, 0, shift * 9, shift * 12);
-      pwm = map(potValue, 0, 450, 255, 0);
-      analogWrite(Mos1, pwm);
-    }
-    else if(potValue < 540){    // off
-      digitalWrite(Mos1, 0);
-      digitalWrite(Mos2, 0);
-    }
-    else{
-      pwm = map(potValue, 540, 1024, 0, 255);
-      analogWrite(Mos2, pwm);
-    }
-
+    // // volt = analogRead(A6);
+    // // shift = 52224 * 3.55 / volt;
+    // potValue = analogRead(Potentio);        // Potentiometer Reading (0 - 1024)
+    // // pwm = map(potValue, 0, 1024, 0, 255);  	// Potentiometer Reading mapped to pwm
+    // // analogWrite(A6, potValue);
+    // // Serial.println(analogRead(5));
+    // if (potValue < 450){  
+    //   // pwm = map(potValue, 450, 0, shift * 9, shift * 12);
+    //   pwm = map(potValue, 0, 450, 255, 0);
+    //   analogWrite(Mos1, pwm);
+    // }
+    // else if(potValue < 540){    // off
+    //   digitalWrite(Mos1, 0);
+    //   digitalWrite(Mos2, 0);
+    // }
+    // else{
+    //   pwm = map(potValue, 540, 1024, 0, 255);
+    //   analogWrite(Mos2, pwm);
+    // }
+    // Serial.print(red); Serial.print(" "); Serial.print(green); Serial.print(" "); Serial.println(blue);
+    changeColor();
   }
-
-  Serial.println(digitalRead(2));
 }
 
 void changeEffect() {
@@ -105,10 +113,16 @@ void changeEffect() {
   ws2812fx.setMode(currentEffect);
 }
 
-long hsvToHex(double hue) {
-  double s, v;
-  s = 1;
-  v = 1;
+void changeColor() {
+  potValue = analogRead(Potentio);
+  double hue = map(potValue, 0, 1024, 0, 1000) / 1000.0;
+  hsvToHex(hue, red, green, blue);
+  ws2812fx.setColor(red, green, blue);
+}
+
+void hsvToHex(double hue, uint8_t& red, uint8_t& green, uint8_t& blue) {
+  double s = 1;
+  double v = 1;
   double r, g, b;
 
   auto i = static_cast<int>(hue * 6);
@@ -137,11 +151,9 @@ long hsvToHex(double hue) {
       r = v, g = p, b = q;
       break;
   }
-  uint8_t red = static_cast<uint8_t>(r * 255);
-  uint8_t green = static_cast<uint8_t>(g * 255);
-  uint8_t blue = static_cast<uint8_t>(b * 255);
+  red = static_cast<uint8_t>(r * 255);
+  green = static_cast<uint8_t>(g * 255);
+  blue = static_cast<uint8_t>(b * 255);
 
   // Serial.print(red); Serial.print(" "); Serial.print(green); Serial.print(" "); Serial.println(blue);
-  long RGB = ((long)red << 16L) | ((long)green << 8L) | (long)blue;
-  return RGB;
 }
