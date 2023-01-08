@@ -1,111 +1,113 @@
-/*
-*/
-
 #include <Arduino.h>
-#include <ezButton.h>
 #include <WS2812FX.h>
+#include <EasyButton.h>
 
 // Pindefinitions +++++++++++++++++
+#define buttonPin 2  // main control button
+#define mosfetDriverLow 5  // mosfet driver low beam
+#define mosfetDriverHigh 6  // mosfet driver high beam
+#define batteryIndicator 3  // battery indicator pin
+#define potentiometerPin A7 // potentiometer pin
 
-#define Button 2  // Button
-#define POT_PIN A7  // Potentiometer
-#define Mos1 5   // Mosfet1
-#define Mos2 6   // Mosfet29
-
+// LED Strip settings +++++++++++++
 #define ledPin 4
-#define numLed 60
+#define ledNum 85
+#define ledBrightness 150
+#define ledSpeed 200
 
-ezButton button(Button);
-WS2812FX ws2812fx = WS2812FX(numLed, ledPin, NEO_RGB + NEO_KHZ800);
-
-const uint8_t LONG_PRESS_TIME = 3000; // 3000 milliseconds (3 secs)
-bool released = true, state = false;
-unsigned long lastPressed = millis();
-uint8_t potValue, prevPotValue, pwm;
-
-int currentEffect;
+uint32_t currentColor = 65535;  // default LED color: pink-ish
+int currentEffect = 0;
 const int effects[] = {0, 1, 2, 3, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 27, 33, 39, 42};
-uint8_t red, green, blue;
 
+// Constants ++++++++++++++++++++++
+#define LONG_PRESS_DURATION 3000  // 3000 milliseconds (3 secs)
+// #define DOUBLE_PRESS_TIMEOUT 300  // 300 milliseconds (0.3 secs)
+
+// Variables +++++++++++++++++++++
+volatile bool state = false;
+volatile unsigned long disableBatteryIndicatorTimer = 0;
+
+const uint8_t potThreshhold = 50; // Threshold to register potentiometer change
+const uint8_t deadBand = 5; // deadband for potentiometer (effective deadband is 2*deadBand)
+const uint8_t numReadings = 10;
+int readings[numReadings];
+uint8_t readIndex = 0;
+int total = 0;
+int average = 0;
+int previousPotValue = 0;
+int minPotValue = 0, maxPotValue = 0;
+bool potentiometerValueChanged = false;
+
+EasyButton button(buttonPin);
+WS2812FX ws2812fx = WS2812FX(ledNum, ledPin, NEO_RGB + NEO_KHZ800);
+
+void initializePeripherals();
+void resetPeripherals();
+void buttonLongPressed();
+// void buttonDoublePressed();
+void buttonPressed();
 void changeEffect();
-void changeColor();
-void hsvToHex(double hue, uint8_t& red, uint8_t& green, uint8_t& blue);
+int readPotentiometer();
 
 void setup() {
   Serial.begin(9600);
-  Serial.println();
 
-  button.setDebounceTime(50);
+  initializePeripherals();
+  resetPeripherals();
 
-  ws2812fx.init();
-  ws2812fx.setBrightness(150);
-  ws2812fx.setSpeed(200);
-  ws2812fx.setColor(0, 0, 0);
-  ws2812fx.start();
-
-  digitalWrite(Mos2, 0);        // start Headlight in off state
-  digitalWrite(Mos1, 0);
+  for (int thisReading = 0; thisReading < numReadings; thisReading++) {
+    readings[thisReading] = 0;
+  }
 }
 
+void initializePeripherals() {
+  button.begin();
+  button.onPressed(buttonPressed);
+  // button.onSequence(2, DOUBLE_PRESS_TIMEOUT, buttonDoublePressed);
+  button.onPressedFor(LONG_PRESS_DURATION, buttonLongPressed);
 
-void loop() {
-  button.loop();
-  ws2812fx.service();
+  ws2812fx.init();
+  ws2812fx.setBrightness(ledBrightness);
+  ws2812fx.setSpeed(ledSpeed);
+  ws2812fx.start();
+  ws2812fx.setColor(currentColor);
 
-  if (button.isPressed()) {
-    prevPotValue = analogRead(POT_PIN);
-    lastPressed = millis();
+  pinMode(mosfetDriverLow, OUTPUT);
+  pinMode(mosfetDriverHigh, OUTPUT);
+  pinMode(batteryIndicator, OUTPUT);
+  pinMode(potentiometerPin, INPUT);
+}
+
+void resetPeripherals() {
+  ws2812fx.setColor(0);
+
+  digitalWrite(mosfetDriverLow, LOW);
+  digitalWrite(mosfetDriverHigh, LOW);
+  
+  disableBatteryIndicatorTimer = millis();
+  potentiometerValueChanged = false;
+}
+
+void buttonPressed() {
+  if (state == true) {
+    changeEffect();
+  }
+}
+
+// void buttonDoublePressed() {
+// }
+
+void buttonLongPressed() {
+  if (state == false) {
+    state = true;
+    ws2812fx.setColor(65500);
+    digitalWrite(batteryIndicator, HIGH);
+    return;
   }
 
-  // turn System on and off
-  if (button.getState() == LOW && released && millis() - lastPressed > LONG_PRESS_TIME) {
-    released = false;   
-    state = !state; 
-
-    if (state) {
-      changeColor();
-    }
-    else {
-      // ws2812fx.strip_off();
-      ws2812fx.setColor(0, 0, 0);
-      ws2812fx.setMode(0);
-    }
-  }
-
-  if (button.isReleased()) {
-    released = true;
-    
-    if (millis() - lastPressed < LONG_PRESS_TIME && state) {
-      // Short press
-      changeEffect();
-    }
-  }
-
-  // 0-450, 450-540, 540-1024 (potentiometer reading)
-  if (state) {
-    potValue = analogRead(POT_PIN);
-
-    if (button.isPressed()) {
-      if (!(prevPotValue - 20 < potValue < prevPotValue + 20) || !released) {
-        changeColor();
-        released = false;
-      }
-    }
-
-    else {      
-      if (potValue < 450) {
-        pwm = map(potValue, 0, 450, 255, 0);
-        analogWrite(Mos1, pwm);
-      }
-      else if (potValue < 540) {
-        digitalWrite(Mos1, 0);
-        digitalWrite(Mos2, 0);
-      }
-      else {
-        pwm = map(potValue, 540, 1024, 255, 0);
-        analogWrite(Mos2, pwm);
-      }
-    }
+  if (potentiometerValueChanged == false) {
+    state = false;
+    resetPeripherals();
   }
 }
 
@@ -118,46 +120,68 @@ void changeEffect() {
 }
 
 void changeColor() {
-  potValue = analogRead(POT_PIN);
-  double hue = map(potValue, 0, 1024, 0, 1000) / 1000.0;
-  hsvToHex(hue, red, green, blue);
-  ws2812fx.setColor(red, green, blue);
+  double hue = map(readPotentiometer(), 0, 1024, 0, 65600);
+  currentColor = ws2812fx.ColorHSV(hue);
+  ws2812fx.setColor(currentColor);
 }
 
-void hsvToHex(double hue, uint8_t& red, uint8_t& green, uint8_t& blue) {
-  double s = 1;
-  double v = 1;
-  double r, g, b;
-
-  auto i = static_cast<int>(hue * 6);
-  auto f = hue * 6 - i;
-  auto p = v * (1 - s);
-  auto q = v * (1 - f * s);
-  auto t = v * (1 - (1 - f) * s);
-
-  switch (i % 6) {
-    case 0:
-      r = v, g = t, b = p;
-      break;
-    case 1:
-      r = q, g = v, b = p;
-      break;
-    case 2:
-      r = p, g = v, b = t;
-      break;
-    case 3:
-      r = p, g = q, b = v;
-      break;
-    case 4:
-      r = t, g = p, b = v;
-      break;
-    case 5:
-      r = v, g = p, b = q;
-      break;
+void disableBatteryIndicator() {
+  if (millis() - disableBatteryIndicatorTimer < 80) {
+    digitalWrite(batteryIndicator, LOW);
   }
-  red = static_cast<uint8_t>(r * 255);
-  green = static_cast<uint8_t>(g * 255);
-  blue = static_cast<uint8_t>(b * 255);
+  else if (millis() - disableBatteryIndicatorTimer < 160) {
+    digitalWrite(batteryIndicator, HIGH);
+  }
+  else {
+    digitalWrite(batteryIndicator, LOW);
+    disableBatteryIndicatorTimer = 0;
+  }
+}
 
-  // Serial.print(red); Serial.print(" "); Serial.print(green); Serial.print(" "); Serial.println(blue);
+int readPotentiometer() {
+  total = total - readings[readIndex];
+  readings[readIndex] = analogRead(potentiometerPin);
+  total = total + readings[readIndex];
+  readIndex = readIndex + 1;
+
+  if (readIndex >= numReadings) {
+    readIndex = 0;
+  }
+  average = total / numReadings;
+
+  if ((average > previousPotValue + deadBand) || (average < previousPotValue - deadBand)) {
+    previousPotValue = average;
+  }
+
+  if (previousPotValue < minPotValue) {
+    minPotValue = previousPotValue;
+  }
+  else if (previousPotValue > maxPotValue) {
+    maxPotValue = previousPotValue;
+  }
+  
+  if (maxPotValue - minPotValue > potThreshhold) {
+    potentiometerValueChanged = true;
+  }
+
+  return previousPotValue;
+}
+
+void loop() {
+  button.read();
+  ws2812fx.service();
+
+  if (disableBatteryIndicatorTimer != 0) {
+    disableBatteryIndicator();
+  }
+
+  if (button.isPressed() == true && state == true) {
+    if (button.wasPressed() == true) {
+      minPotValue = readPotentiometer();
+      maxPotValue = minPotValue;
+      potentiometerValueChanged = false;
+    }
+
+    changeColor();
+  }
 }
