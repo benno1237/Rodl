@@ -1,6 +1,13 @@
 #include <Arduino.h>
 #include <WS2812FX.h>
 #include <EasyButton.h>
+// #include "HTU21D.h"
+
+// HTU21D myHumidity;
+// const int Interval = 15000;   // Interval for readouts (in ms)
+// unsigned long prevTime = -Interval;
+
+// float humd, temp;
 
 // Pindefinitions +++++++++++++++++
 #define buttonPin 2  // main control button
@@ -65,6 +72,7 @@ void setup() {
 
   initializePeripherals();
   resetPeripherals();
+  // myHumidity.begin();
 }
 
 void initializePeripherals() {
@@ -154,25 +162,26 @@ void changeColor() {
 void changeBrightness() {
   if (brightnessInit == false) {
     brightnessInit = true;
-    potOffsetInit = readPotentiometer();    // initial potvalue used for offset calculation
-    potOffset = (1024 - potOffsetInit)%512;   // offset from max/min value
+    // potOffsetInit = readPotentiometer();    // initial potvalue used for offset calculation
+    // potOffset = (1024 - potOffsetInit)%512;   // offset from max/min value
   }
   // currentBrightness = map(readPotentiometer(), potOffsetInit - potOffset, potOffsetInit + potOffset, 0, 255);
-  // ws2812fx.setBrightness(currentBrightness);
+  currentBrightness = map(readPotentiometer(), 0, 1024, 0, 255);
+  ws2812fx.setBrightness(currentBrightness);
   // potOffsetInit = readPotentiometer();
 
-  hue = map(potOffsetInit - readPotentiometer(), 0, 1024, 0, 255) + currentBrightness;  // hue is oldhue - newhue (hue difference) + the already set hue
-  // "modulo" for hue
-  if (hue > 255) {
-    hue -= 255;
-  }
-  else if (hue < 0) {
-    hue += 255;
-  }
+  // hue = map(potOffsetInit - readPotentiometer(), 0, 1024, 0, 255) + currentBrightness;  // hue is oldhue - newhue (hue difference) + the already set hue
+  // // "modulo" for hue
+  // if (hue > 255) {
+  //   hue -= 255;
+  // }
+  // else if (hue < 0) {
+  //   hue += 255;
+  // }
 
-  currentBrightness = hue;
-  ws2812fx.setBrightness(currentBrightness);
-  potOffsetInit = readPotentiometer();
+  // currentBrightness = hue;
+  // ws2812fx.setBrightness(currentBrightness);
+  // potOffsetInit = readPotentiometer();
 }
 
 void disableBatteryIndicator() {
@@ -273,4 +282,15 @@ void loop() {
     changeLight(readPotentiometer());
   }
   // Serial.println(readPotentiometer());
+  // if (millis() - prevTime > Interval){
+  //   prevTime = millis();
+  //   if (humd < myHumidity.readHumidity()) {
+  //     humd = myHumidity.readHumidity();
+  //   }
+  //   if (temp < myHumidity.readTemperature()) {
+  //     temp = myHumidity.readTemperature();
+  //   }
+  //   Serial.println(temp, 1);
+  //   Serial.println(humd, 1);
+  // }
 }
