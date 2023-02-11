@@ -15,6 +15,10 @@
 #define ledBrightness 150
 #define ledSpeed 200
 
+// Voltage Divider
+#define R1 1000000
+#define R2 300000
+
 uint32_t currentColor = 65535;  // default LED color: pink-ish
 int currentEffect = 0;
 const int effects[] = {0, 1, 2, 3, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 27, 33, 39, 42};
