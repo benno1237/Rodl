@@ -22,6 +22,14 @@
 #define ledNum 85
 #define ledSpeed 200
 
+// Voltage divider settings +++++++
+#define R1 1000000  // R1 and R2 are the resistors in the voltage divider
+#define R2 300000  // R1 and R2 are the resistors in the voltage divider
+#define ADC_MAX 1023  // ADC resolution
+#define VCC 5000  // ADC reference voltage in mV
+#define partialShutdownVoltage 3300  // voltage at which the LED strip is shut down
+#define shutdownVoltage 3000  // voltage at which the entire system is shut down
+
 uint32_t currentColor = 65535;  // default LED color: pink-ish
 uint32_t currentColorHue = 1000;  // default LED color: pink-ish
 uint8_t currentBrightness = 150;  // default LED brightness
@@ -68,8 +76,6 @@ int readPotentiometer();
 int readVoltageDivider();
 
 void setup() {
-  Serial.begin(9600);
-
   initializePeripherals();
   resetPeripherals();
   // myHumidity.begin();
@@ -107,7 +113,6 @@ void resetPeripherals() {
 void buttonPressed() {
   if (state == true && potentiometerValueChanged == false) {
     changeEffect();
-    Serial.println("Pressed");
   }
 }
 
@@ -116,7 +121,7 @@ void buttonPressed() {
 
 void buttonLongPressed() {
   // if turned off, turn on and exit function
-  if (state == false) {
+  if (state == false && readVoltageDivider() > shutdownVoltage) {
     state = true;
     ws2812fx.setColor(currentColor);
     digitalWrite(batteryIndicator, HIGH);
@@ -127,7 +132,6 @@ void buttonLongPressed() {
     state = false;
     resetPeripherals();
   }
-  Serial.println("Long Pressed");
 }
 
 void changeEffect() {
@@ -160,6 +164,9 @@ void changeColor() {
 }
 
 void changeBrightness() {
+  if (readVoltageDivider() < partialShutdownVoltage) {
+    return;
+  }
   if (brightnessInit == false) {
     brightnessInit = true;
     // potOffsetInit = readPotentiometer();    // initial potvalue used for offset calculation
@@ -197,8 +204,9 @@ void disableBatteryIndicator() {
   }
 }
 
-int readVoltageDivider() {
-  return analogRead(VoltageDividerPin);
+int readVoltageDivider() {  // returns battery voltage in mV
+  int voltageLevelRaw = analogRead(VoltageDividerPin) / ADC_MAX * VCC;
+  return voltageLevelRaw * (R1 + R2) / R2;
 }
 
 int readPotentiometer() {
@@ -280,6 +288,15 @@ void loop() {
     colorInit = false;
     // Serial.println("Released");
     changeLight(readPotentiometer());
+  }
+
+  if (state == true && readVoltageDivider() < partialShutdownVoltage && ws2812fx.getBrightness() != 0) {
+    ws2812fx.setBrightness(0);
+  }
+
+  if (readVoltageDivider() < shutdownVoltage) {
+    resetPeripherals();  // disable all peripherals
+    state = false;
   }
   // Serial.println(readPotentiometer());
   // if (millis() - prevTime > Interval){
