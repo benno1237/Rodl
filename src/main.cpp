@@ -27,7 +27,15 @@
 #define ledNum 88 
 #define ledSpeed 500
 
-uint32_t currentColor = 65535 ;  // default LED color: pink-ish
+// Voltage divider settings +++++++
+#define R1 1000000  // R1 and R2 are the resistors in the voltage divider
+#define R2 300000  // R1 and R2 are the resistors in the voltage divider
+#define ADC_MAX 1023  // ADC resolution
+#define VCC 5000  // ADC reference voltage in mV
+#define partialShutdownVoltage 3300  // voltage at which the LED strip is shut down
+#define shutdownVoltage 3000  // voltage at which the entire system is shut down
+
+uint32_t currentColor = 65535;  // default LED color: pink-ish
 uint32_t currentColorHue = 1000;  // default LED color: pink-ish
 uint8_t currentBrightness = 150;  // default LED brightness
 uint8_t currentEffect = 0;
@@ -119,7 +127,6 @@ void buttonPressed() {
 //   if (state == true && potentiometerValueChanged == false) {
   if (state) {
     changeEffect();
-    Serial.println("Pressed");
   }
 }
 
@@ -129,7 +136,7 @@ void buttonPressed() {
 void buttonLongPressed() {
   Serial.println("Long Pressed");
   // if turned off, turn on and exit function
-  if (state == false) {
+  if (state == false && readVoltageDivider() > shutdownVoltage) {
     state = true;
     ws2812fx.setBrightness(currentBrightness);
     ws2812fx.setColor(currentColor);
@@ -173,21 +180,50 @@ void changeColor() {
   potOffsetInit = readPotentiometer();
 }
 
-// void disableBatteryIndicator() {
-//   if (millis() - disableBatteryIndicatorTimer < 80) {
-//     digitalWrite(batteryIndicator, LOW);
-//   }
-//   else if (millis() - disableBatteryIndicatorTimer < 160) {
-//     digitalWrite(batteryIndicator, HIGH);
-//   }
-//   else {
-//     digitalWrite(batteryIndicator, LOW);
-//     disableBatteryIndicatorTimer = 0;
-//   }
-// }
+void changeBrightness() {
+  if (readVoltageDivider() < partialShutdownVoltage) {
+    return;
+  }
+  if (brightnessInit == false) {
+    brightnessInit = true;
+    // potOffsetInit = readPotentiometer();    // initial potvalue used for offset calculation
+    // potOffset = (1024 - potOffsetInit)%512;   // offset from max/min value
+  }
+  // currentBrightness = map(readPotentiometer(), potOffsetInit - potOffset, potOffsetInit + potOffset, 0, 255);
+  currentBrightness = map(readPotentiometer(), 0, 1024, 0, 255);
+  ws2812fx.setBrightness(currentBrightness);
+  // potOffsetInit = readPotentiometer();
 
-int readVoltageDivider() {
-  return analogRead(VoltageDividerPin);
+  // hue = map(potOffsetInit - readPotentiometer(), 0, 1024, 0, 255) + currentBrightness;  // hue is oldhue - newhue (hue difference) + the already set hue
+  // // "modulo" for hue
+  // if (hue > 255) {
+  //   hue -= 255;
+  // }
+  // else if (hue < 0) {
+  //   hue += 255;
+  // }
+
+  // currentBrightness = hue;
+  // ws2812fx.setBrightness(currentBrightness);
+  // potOffsetInit = readPotentiometer();
+}
+
+void disableBatteryIndicator() {
+  if (millis() - disableBatteryIndicatorTimer < 80) {
+    digitalWrite(batteryIndicator, LOW);
+  }
+  else if (millis() - disableBatteryIndicatorTimer < 160) {
+    digitalWrite(batteryIndicator, HIGH);
+  }
+  else {
+    digitalWrite(batteryIndicator, LOW);
+    disableBatteryIndicatorTimer = 0;
+  }
+}
+
+int readVoltageDivider() {  // returns battery voltage in mV
+  int voltageLevelRaw = analogRead(VoltageDividerPin) / ADC_MAX * VCC;
+  return voltageLevelRaw * (R1 + R2) / R2;
 }
 
 int readPotentiometer() {
@@ -271,6 +307,15 @@ void loop() {
   //   // colorInit = false;
   //   // Serial.println("Released");
     changeLight(readPotentiometer());
+  }
+
+  if (state == true && readVoltageDivider() < partialShutdownVoltage && ws2812fx.getBrightness() != 0) {
+    ws2812fx.setBrightness(0);
+  }
+
+  if (readVoltageDivider() < shutdownVoltage) {
+    resetPeripherals();  // disable all peripherals
+    state = false;
   }
   // Serial.println(readPotentiometer());
   // if (millis() - prevTime > Interval){
