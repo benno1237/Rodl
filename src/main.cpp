@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <WS2812FX.h>
 #include <EasyButton.h>
+#include <LIS3DHTR.h>  // Include the LIS3DHTR library
 
 // Pin Definitions
 #define BUTTON_PIN          16  // Main control button
@@ -21,7 +22,9 @@ uint8_t  currentEffect     = 0;
 const uint8_t effects[] = {12, 11, 2, 7, 0, 1, 3, 5, 8, 13, 17, 18, 20, 27, 33, 39};
 
 // Constants
-#define LONG_PRESS_DURATION 1500  // Duration for long press in milliseconds
+#define LONG_PRESS_DURATION       1500  // Duration for long press in milliseconds
+#define SIDEWAYS_THRESHOLD_TIME   5000  // Time in milliseconds to detect sideways orientation
+#define SIDEWAYS_ACCEL_THRESHOLD  0.7   // Acceleration threshold for sideways detection (in g)
 
 // PWM Settings
 const int PWM_FREQ         = 5000; // PWM frequency in Hz
@@ -30,12 +33,18 @@ const int PWM_CHANNEL_LOW  = 0;    // PWM channel for low beam
 const int PWM_CHANNEL_HIGH = 1;    // PWM channel for high beam
 
 // Variables
-volatile bool state = false;
+volatile bool state = false;  // System state: true = on, false = off
 const uint8_t numReadings = 10;
 int readings[numReadings] = {0};  // Potentiometer readings for averaging
 uint8_t readIndex = 0;
 int total = 0;
 int previousPotValue = 0;
+
+// Orientation Detection Variables
+LIS3DHTR<TwoWire> lis;  // Accelerometer object
+unsigned long sidewaysStartTime = 0;
+bool isSideways = false;
+bool orientationDisabled = false;
 
 // Objects
 EasyButton button(BUTTON_PIN);
@@ -44,11 +53,13 @@ WS2812FX ws2812fx = WS2812FX(LED_NUM, LED_PIN, NEO_RGB + NEO_KHZ800);
 // Function Prototypes
 void initializePeripherals();
 void resetPeripherals();
+void restorePeripherals();
 void buttonLongPressed();
 void buttonPressed();
 void changeEffect();
 int readPotentiometer();
 void changeLight(int potValue);
+void checkOrientation();
 
 void setup() {
   Serial.begin(115200);
@@ -78,16 +89,37 @@ void initializePeripherals() {
   ledcAttachPin(MOSFET_DRIVER_HIGH, PWM_CHANNEL_HIGH);
 
   pinMode(POTENTIOMETER_PIN, INPUT);
+
+  // Initialize accelerometer
+  Wire.begin();
+  if (!lis.begin(Wire, 0x18)) {  // 0x18 is the default I2C address
+    Serial.println("Failed to initialize LIS3DHTR.");
+    while (1);
+  }
+  lis.setOutputDataRate(LIS3DHTR_DATARATE_50HZ);
+  lis.setHighSolution(true);
 }
 
 void resetPeripherals() {
-  ws2812fx.setBrightness(0);
+  ws2812fx.stop();           // Stop the LED effects
+  ws2812fx.setBrightness(0); // Turn off LED strip
+  ws2812fx.strip_off();      // Ensure LEDs are off
   ledcWrite(PWM_CHANNEL_HIGH, 0);
   ledcWrite(PWM_CHANNEL_LOW, 0);
 }
 
+void restorePeripherals() {
+  ws2812fx.setBrightness(currentBrightness);
+  ws2812fx.setColor(currentColor);
+  ws2812fx.setMode(effects[currentEffect]);
+  ws2812fx.start(); // Start the LED effects
+
+  // Restore PWM outputs according to potentiometer
+  changeLight(readPotentiometer());
+}
+
 void buttonPressed() {
-  if (state) {
+  if (state && !orientationDisabled) {
     changeEffect();
   }
 }
@@ -96,8 +128,9 @@ void buttonLongPressed() {
   Serial.println("Long Pressed");
   if (!state) {
     state = true;
-    ws2812fx.setBrightness(currentBrightness);
-    ws2812fx.setColor(currentColor);
+    if (!orientationDisabled) {
+      restorePeripherals();
+    }
   } else {
     state = false;
     resetPeripherals();
@@ -136,11 +169,55 @@ void changeLight(int potValue) {
   }
 }
 
+void checkOrientation() {
+  // Read accelerometer data
+  float ax = lis.getAccelerationX();
+  float ay = lis.getAccelerationY();
+  float az = lis.getAccelerationZ();
+
+  // Determine if the board is sideways
+  bool sideways = false;
+  if (abs(az) < SIDEWAYS_ACCEL_THRESHOLD) {
+    if (abs(ax) > SIDEWAYS_ACCEL_THRESHOLD || abs(ay) > SIDEWAYS_ACCEL_THRESHOLD) {
+      sideways = true;
+    }
+  }
+
+  // Handle sideways detection
+  if (sideways) {
+    if (!isSideways) {
+      isSideways = true;
+      sidewaysStartTime = millis();
+    } else {
+      if (millis() - sidewaysStartTime >= SIDEWAYS_THRESHOLD_TIME) {
+        if (!orientationDisabled) {
+          orientationDisabled = true;
+          resetPeripherals();
+          Serial.println("Board is sideways. Shutting down lights.");
+        }
+      }
+    }
+  } else {
+    isSideways = false;
+    sidewaysStartTime = millis(); // Reset the sideways timer
+
+    if (orientationDisabled) {
+      orientationDisabled = false;
+      if (state) {
+        restorePeripherals();
+        Serial.println("Board returned to normal orientation. Restoring lights.");
+      }
+    }
+  }
+}
+
 void loop() {
   button.read();
   ws2812fx.service();
 
-  if (state) {
+  if (state && !orientationDisabled) {
     changeLight(readPotentiometer());
   }
+
+  checkOrientation();
 }
