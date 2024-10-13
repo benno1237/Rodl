@@ -18,6 +18,7 @@ constexpr uint16_t  LED_SPEED   = 500; // LED update speed
 
 // Constants
 constexpr uint8_t   numReadings              = 10;    // Amount of pot values to average
+const uint8_t effects[] = {12, 11, 2, 7, 0, 1, 3, 5, 8, 13, 17, 18, 20, 27, 33, 39};  // LED effects to use
 
 // PWM Settings
 constexpr int PWM_FREQ         = 5000; // PWM frequency in Hz
@@ -42,7 +43,8 @@ uint8_t   currentEffect;
 uint16_t  LONG_PRESS_DURATION;
 uint16_t  SIDEWAYS_THRESHOLD_TIME;
 float     SIDEWAYS_ACCEL_THRESHOLD;
-const uint8_t effects[] = {12, 11, 2, 7, 0, 1, 3, 5, 8, 13, 17, 18, 20, 27, 33, 39};
+bool     ACCEL_AUTO_SHUTDOWN;  // Shut down automatically if the sledge is upwards
+bool     ACCEL_AUTO_STARTUP;   // Start back up if the sledge is on the ground again
 
 // Variables
 volatile bool state = false;  // System state: true = on, false = off
@@ -265,6 +267,20 @@ void handleBluetooth() {
       } else {
         SerialBT.println("Invalid effect index.");
       }
+    } else if (input.startsWith("SET_ACCEL_AUTO_SHUTDOWN ")) {
+      int value = input.substring(24).toInt();
+      ACCEL_AUTO_SHUTDOWN = (value != 0);
+      saveConfiguration();
+      SerialBT.println("ACCEL_AUTO_SHUTDOWN set to: " + String(ACCEL_AUTO_SHUTDOWN));
+    } else if (input.startsWith("SET_ACCEL_AUTO_STARTUP ")) {
+      int value = input.substring(23).toInt();
+      ACCEL_AUTO_STARTUP = (value != 0);
+      saveConfiguration();
+      SerialBT.println("ACCEL_AUTO_STARTUP set to: " + String(ACCEL_AUTO_STARTUP));
+    } else if (input.equals("GET_ACCEL_AUTO_SHUTDOWN")) {
+      SerialBT.println(String(ACCEL_AUTO_SHUTDOWN));
+    } else if (input.equals("GET_ACCEL_AUTO_STARTUP")) {
+      SerialBT.println(String(ACCEL_AUTO_STARTUP));
     } else if (input.startsWith("SET_LONG_PRESS_DURATION ")) {
       int duration = input.substring(24).toInt();
       LONG_PRESS_DURATION = duration;
@@ -316,6 +332,8 @@ void loadConfiguration() {
   LONG_PRESS_DURATION = preferences.getUShort("LONG_PRESS_DURATION", DEFAULT_LONG_PRESS_DURATION);
   SIDEWAYS_THRESHOLD_TIME = preferences.getUShort("SIDEWAYS_THRESHOLD_TIME", DEFAULT_SIDEWAYS_THRESHOLD_TIME);
   SIDEWAYS_ACCEL_THRESHOLD = preferences.getFloat("SIDEWAYS_ACCEL_THRESHOLD", DEFAULT_SIDEWAYS_ACCEL_THRESHOLD);
+  ACCEL_AUTO_SHUTDOWN = preferences.getBool("ACCEL_AUTO_SHUTDOWN", false);  // this surely defaults to false
+  ACCEL_AUTO_STARTUP = preferences.getBool("ACCEL_AUTO_STARTUP", false);    // same here
   preferences.end();
 
   Serial.println("Configuration loaded:");
@@ -327,7 +345,10 @@ void loadConfiguration() {
   Serial.println("LONG_PRESS_DURATION: " + String(LONG_PRESS_DURATION));
   Serial.println("SIDEWAYS_THRESHOLD_TIME: " + String(SIDEWAYS_THRESHOLD_TIME));
   Serial.println("SIDEWAYS_ACCEL_THRESHOLD: " + String(SIDEWAYS_ACCEL_THRESHOLD));
+  Serial.println("ACCEL_AUTO_SHUTDOWN: " + String(ACCEL_AUTO_SHUTDOWN));
+  Serial.println("ACCEL_AUTO_STARTUP: " + String(ACCEL_AUTO_STARTUP));
 }
+
 
 void saveConfiguration() {
   preferences.begin("config", false);
@@ -337,10 +358,13 @@ void saveConfiguration() {
   preferences.putUShort("LONG_PRESS_DURATION", LONG_PRESS_DURATION);
   preferences.putUShort("SIDEWAYS_THRESHOLD_TIME", SIDEWAYS_THRESHOLD_TIME);
   preferences.putFloat("SIDEWAYS_ACCEL_THRESHOLD", SIDEWAYS_ACCEL_THRESHOLD);
+  preferences.putBool("ACCEL_AUTO_SHUTDOWN", ACCEL_AUTO_SHUTDOWN);
+  preferences.putBool("ACCEL_AUTO_STARTUP", ACCEL_AUTO_STARTUP);
   preferences.end();
 
   Serial.println("Configuration saved.");
 }
+
 
 void loop() {
   button.read();
