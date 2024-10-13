@@ -257,7 +257,7 @@ void handleBluetooth() {
       SerialBT.println("Brightness set to: " + String(currentBrightness));
     } else if (input.startsWith("SET_EFFECT ")) {
       int effectIndex = input.substring(11).toInt();
-      if (effectIndex >= 0 && effectIndex < sizeof(effects)) {
+      if (effectIndex >= 0 && effectIndex < (sizeof(effects) / sizeof(effects[0]))) {
         currentEffect = effectIndex;
         ws2812fx.setMode(effects[currentEffect]);
         saveConfiguration();
@@ -281,20 +281,32 @@ void handleBluetooth() {
       SIDEWAYS_ACCEL_THRESHOLD = threshold;
       saveConfiguration();
       SerialBT.println("Sideways acceleration threshold set to: " + String(SIDEWAYS_ACCEL_THRESHOLD));
+    } else if (input.equals("GET_COLOR")) {
+      SerialBT.println(String(currentColor, HEX));
+    } else if (input.equals("GET_BRIGHTNESS")) {
+      SerialBT.println(String(currentBrightness));
+    } else if (input.equals("GET_EFFECT")) {
+      SerialBT.println(String(currentEffect));
+    } else if (input.equals("GET_LONG_PRESS_DURATION")) {
+      SerialBT.println(String(LONG_PRESS_DURATION));
+    } else if (input.equals("GET_SIDEWAYS_THRESHOLD_TIME")) {
+      SerialBT.println(String(SIDEWAYS_THRESHOLD_TIME));
+    } else if (input.equals("GET_SIDEWAYS_ACCEL_THRESHOLD")) {
+      SerialBT.println(String(SIDEWAYS_ACCEL_THRESHOLD));
     } else if (input.equals("GET_CONFIG")) {
-      // Send current configuration
-      SerialBT.println("CONFIGURATION:");
-      SerialBT.println("Color: " + String(currentColor, HEX));
-      SerialBT.println("Brightness: " + String(currentBrightness));
-      SerialBT.println("Effect: " + String(currentEffect));
-      SerialBT.println("LONG_PRESS_DURATION: " + String(LONG_PRESS_DURATION));
-      SerialBT.println("SIDEWAYS_THRESHOLD_TIME: " + String(SIDEWAYS_THRESHOLD_TIME));
-      SerialBT.println("SIDEWAYS_ACCEL_THRESHOLD: " + String(SIDEWAYS_ACCEL_THRESHOLD));
+      // Send current configuration values without labels
+      SerialBT.println(String(currentColor, HEX));
+      SerialBT.println(String(currentBrightness));
+      SerialBT.println(String(currentEffect));
+      SerialBT.println(String(LONG_PRESS_DURATION));
+      SerialBT.println(String(SIDEWAYS_THRESHOLD_TIME));
+      SerialBT.println(String(SIDEWAYS_ACCEL_THRESHOLD));
     } else {
       SerialBT.println("Unknown command.");
     }
   }
 }
+
 
 void loadConfiguration() {
   preferences.begin("config", false);
