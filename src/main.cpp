@@ -1,40 +1,51 @@
 #include <Arduino.h>
 #include <WS2812FX.h>
 #include <EasyButton.h>
-#include <LIS3DHTR.h>  // Include the LIS3DHTR library
+#include <LIS3DHTR.h>          // Include the LIS3DHTR library
+#include <BluetoothSerial.h>   // Include BluetoothSerial library
+#include <Preferences.h>       // Include Preferences library for NVS storage
 
 // Pin Definitions
-#define BUTTON_PIN          16  // Main control button
-#define MOSFET_DRIVER_LOW   12  // MOSFET driver for low beam
-#define MOSFET_DRIVER_HIGH  11  // MOSFET driver for high beam
-#define POTENTIOMETER_PIN   15  // Potentiometer pin
+constexpr uint8_t BUTTON_PIN          = 16;  // Main control button
+constexpr uint8_t MOSFET_DRIVER_LOW   = 12;  // MOSFET driver for low beam
+constexpr uint8_t MOSFET_DRIVER_HIGH  = 11;  // MOSFET driver for high beam
+constexpr uint8_t POTENTIOMETER_PIN   = 15;  // Potentiometer pin
 
 // LED Strip Settings
-#define LED_PIN    10
-#define LED_NUM    88
-#define LED_SPEED  500
-
-// Default Settings
-uint32_t currentColor     = 65535;  // Default LED color (pink-ish)
-uint32_t currentColorHue  = 1000;   // Default LED hue
-uint8_t  currentBrightness = 150;   // Default LED brightness
-uint8_t  currentEffect     = 0;
-const uint8_t effects[] = {12, 11, 2, 7, 0, 1, 3, 5, 8, 13, 17, 18, 20, 27, 33, 39};
+constexpr uint8_t   LED_PIN     = 10;  // WS2815 LED control pin
+constexpr uint8_t   LED_NUM     = 88;  // LED amount
+constexpr uint16_t  LED_SPEED   = 500; // LED update speed
 
 // Constants
-#define LONG_PRESS_DURATION       1500  // Duration for long press in milliseconds
-#define SIDEWAYS_THRESHOLD_TIME   5000  // Time in milliseconds to detect sideways orientation
-#define SIDEWAYS_ACCEL_THRESHOLD  0.7   // Acceleration threshold for sideways detection (in g)
+constexpr uint8_t   numReadings              = 10;    // Amount of pot values to average
 
 // PWM Settings
-const int PWM_FREQ         = 5000; // PWM frequency in Hz
-const int PWM_RESOLUTION   = 8;    // PWM resolution in bits
-const int PWM_CHANNEL_LOW  = 0;    // PWM channel for low beam
-const int PWM_CHANNEL_HIGH = 1;    // PWM channel for high beam
+constexpr int PWM_FREQ         = 5000; // PWM frequency in Hz
+constexpr int PWM_RESOLUTION   = 8;    // PWM resolution in bits
+constexpr int PWM_CHANNEL_LOW  = 0;    // PWM channel for low beam
+constexpr int PWM_CHANNEL_HIGH = 1;    // PWM channel for high beam
+
+// Default Settings (will be used if no stored values are found)
+constexpr uint32_t DEFAULT_COLOR      = 65535;  // Default LED color (pink-ish)
+constexpr uint8_t  DEFAULT_BRIGHTNESS = 150;    // Default LED brightness
+constexpr uint8_t  DEFAULT_EFFECT     = 0;      // Default LED effect
+
+// Advanced Settings (will be used if no stored values are found)
+constexpr uint16_t  DEFAULT_LONG_PRESS_DURATION      = 1500;  // Duration for long press in milliseconds
+constexpr uint16_t  DEFAULT_SIDEWAYS_THRESHOLD_TIME  = 5000;  // Time in milliseconds to detect sideways orientation
+constexpr float     DEFAULT_SIDEWAYS_ACCEL_THRESHOLD = 0.7;   // Acceleration threshold for sideways detection (in g)
+
+// Variables (will be loaded from storage or defaulted)
+uint32_t  currentColor;
+uint8_t   currentBrightness;
+uint8_t   currentEffect;
+uint16_t  LONG_PRESS_DURATION;
+uint16_t  SIDEWAYS_THRESHOLD_TIME;
+float     SIDEWAYS_ACCEL_THRESHOLD;
+const uint8_t effects[] = {12, 11, 2, 7, 0, 1, 3, 5, 8, 13, 17, 18, 20, 27, 33, 39};
 
 // Variables
 volatile bool state = false;  // System state: true = on, false = off
-const uint8_t numReadings = 10;
 int readings[numReadings] = {0};  // Potentiometer readings for averaging
 uint8_t readIndex = 0;
 int total = 0;
@@ -45,6 +56,10 @@ LIS3DHTR<TwoWire> lis;  // Accelerometer object
 unsigned long sidewaysStartTime = 0;
 bool isSideways = false;
 bool orientationDisabled = false;
+
+// Bluetooth and Preferences
+BluetoothSerial SerialBT;
+Preferences preferences;
 
 // Objects
 EasyButton button(BUTTON_PIN);
@@ -60,6 +75,9 @@ void changeEffect();
 int readPotentiometer();
 void changeLight(int potValue);
 void checkOrientation();
+void handleBluetooth();
+void loadConfiguration();
+void saveConfiguration();
 
 void setup() {
   Serial.begin(115200);
@@ -70,6 +88,9 @@ void setup() {
 }
 
 void initializePeripherals() {
+  // Load configuration from NVS
+  loadConfiguration();
+
   button.begin();
   button.onPressed(buttonPressed);
   button.onPressedFor(LONG_PRESS_DURATION, buttonLongPressed);
@@ -98,6 +119,10 @@ void initializePeripherals() {
   }
   lis.setOutputDataRate(LIS3DHTR_DATARATE_50HZ);
   lis.setHighSolution(true);
+
+  // Initialize Bluetooth
+  SerialBT.begin("ESP32_Lights"); // Bluetooth device name
+  Serial.println("Bluetooth started. Waiting for connections...");
 }
 
 void resetPeripherals() {
@@ -140,7 +165,8 @@ void buttonLongPressed() {
 void changeEffect() {
   currentEffect = (currentEffect + 1) % (sizeof(effects) / sizeof(effects[0]));
   ws2812fx.setMode(effects[currentEffect]);
-  Serial.println(effects[currentEffect]);
+  saveConfiguration(); // Save the new effect to NVS
+  Serial.println("Effect changed to: " + String(currentEffect));
 }
 
 int readPotentiometer() {
@@ -211,9 +237,103 @@ void checkOrientation() {
   }
 }
 
+void handleBluetooth() {
+  if (SerialBT.available()) {
+    String input = SerialBT.readStringUntil('\n');
+    input.trim();
+
+    // Parse the input command
+    if (input.startsWith("SET_COLOR ")) {
+      uint32_t color = strtoul(input.substring(10).c_str(), NULL, 16);
+      currentColor = color;
+      ws2812fx.setColor(currentColor);
+      saveConfiguration();
+      SerialBT.println("Color set to: " + String(currentColor, HEX));
+    } else if (input.startsWith("SET_BRIGHTNESS ")) {
+      int brightness = input.substring(15).toInt();
+      currentBrightness = constrain(brightness, 0, 255);
+      ws2812fx.setBrightness(currentBrightness);
+      saveConfiguration();
+      SerialBT.println("Brightness set to: " + String(currentBrightness));
+    } else if (input.startsWith("SET_EFFECT ")) {
+      int effectIndex = input.substring(11).toInt();
+      if (effectIndex >= 0 && effectIndex < sizeof(effects)) {
+        currentEffect = effectIndex;
+        ws2812fx.setMode(effects[currentEffect]);
+        saveConfiguration();
+        SerialBT.println("Effect set to: " + String(currentEffect));
+      } else {
+        SerialBT.println("Invalid effect index.");
+      }
+    } else if (input.startsWith("SET_LONG_PRESS_DURATION ")) {
+      int duration = input.substring(24).toInt();
+      LONG_PRESS_DURATION = duration;
+      button.onPressedFor(LONG_PRESS_DURATION, buttonLongPressed); // Update the button long press duration
+      saveConfiguration();
+      SerialBT.println("Long press duration set to: " + String(LONG_PRESS_DURATION));
+    } else if (input.startsWith("SET_SIDEWAYS_THRESHOLD_TIME ")) {
+      int time = input.substring(27).toInt();
+      SIDEWAYS_THRESHOLD_TIME = time;
+      saveConfiguration();
+      SerialBT.println("Sideways threshold time set to: " + String(SIDEWAYS_THRESHOLD_TIME));
+    } else if (input.startsWith("SET_SIDEWAYS_ACCEL_THRESHOLD ")) {
+      float threshold = input.substring(29).toFloat();
+      SIDEWAYS_ACCEL_THRESHOLD = threshold;
+      saveConfiguration();
+      SerialBT.println("Sideways acceleration threshold set to: " + String(SIDEWAYS_ACCEL_THRESHOLD));
+    } else if (input.equals("GET_CONFIG")) {
+      // Send current configuration
+      SerialBT.println("CONFIGURATION:");
+      SerialBT.println("Color: " + String(currentColor, HEX));
+      SerialBT.println("Brightness: " + String(currentBrightness));
+      SerialBT.println("Effect: " + String(currentEffect));
+      SerialBT.println("LONG_PRESS_DURATION: " + String(LONG_PRESS_DURATION));
+      SerialBT.println("SIDEWAYS_THRESHOLD_TIME: " + String(SIDEWAYS_THRESHOLD_TIME));
+      SerialBT.println("SIDEWAYS_ACCEL_THRESHOLD: " + String(SIDEWAYS_ACCEL_THRESHOLD));
+    } else {
+      SerialBT.println("Unknown command.");
+    }
+  }
+}
+
+void loadConfiguration() {
+  preferences.begin("config", false);
+  currentColor = preferences.getUInt("ledColor", DEFAULT_COLOR);
+  currentBrightness = preferences.getUChar("ledBrightness", DEFAULT_BRIGHTNESS);
+  currentEffect = preferences.getUChar("ledEffect", DEFAULT_EFFECT);
+  LONG_PRESS_DURATION = preferences.getUShort("LONG_PRESS_DURATION", DEFAULT_LONG_PRESS_DURATION);
+  SIDEWAYS_THRESHOLD_TIME = preferences.getUShort("SIDEWAYS_THRESHOLD_TIME", DEFAULT_SIDEWAYS_THRESHOLD_TIME);
+  SIDEWAYS_ACCEL_THRESHOLD = preferences.getFloat("SIDEWAYS_ACCEL_THRESHOLD", DEFAULT_SIDEWAYS_ACCEL_THRESHOLD);
+  preferences.end();
+
+  Serial.println("Configuration loaded:");
+  Serial.println("Color: " + String(currentColor, HEX));
+  Serial.println("Brightness: " + String(currentBrightness));
+  Serial.println("Effect: " + String(currentEffect));
+  Serial.println();
+  Serial.println("Advanced configuration:");
+  Serial.println("LONG_PRESS_DURATION: " + String(LONG_PRESS_DURATION));
+  Serial.println("SIDEWAYS_THRESHOLD_TIME: " + String(SIDEWAYS_THRESHOLD_TIME));
+  Serial.println("SIDEWAYS_ACCEL_THRESHOLD: " + String(SIDEWAYS_ACCEL_THRESHOLD));
+}
+
+void saveConfiguration() {
+  preferences.begin("config", false);
+  preferences.putUInt("ledColor", currentColor);
+  preferences.putUChar("ledBrightness", currentBrightness);
+  preferences.putUChar("ledEffect", currentEffect);
+  preferences.putUShort("LONG_PRESS_DURATION", LONG_PRESS_DURATION);
+  preferences.putUShort("SIDEWAYS_THRESHOLD_TIME", SIDEWAYS_THRESHOLD_TIME);
+  preferences.putFloat("SIDEWAYS_ACCEL_THRESHOLD", SIDEWAYS_ACCEL_THRESHOLD);
+  preferences.end();
+
+  Serial.println("Configuration saved.");
+}
+
 void loop() {
   button.read();
   ws2812fx.service();
+  handleBluetooth();
 
   if (state && !orientationDisabled) {
     changeLight(readPotentiometer());
