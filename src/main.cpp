@@ -1,332 +1,146 @@
 #include <Arduino.h>
 #include <WS2812FX.h>
 #include <EasyButton.h>
-// #include <BluetoothSerial.h>
-// #include "HTU21D.h"
 
-// BluetoothSerial SerialBT;
+// Pin Definitions
+#define BUTTON_PIN          16  // Main control button
+#define MOSFET_DRIVER_LOW   12  // MOSFET driver for low beam
+#define MOSFET_DRIVER_HIGH  11  // MOSFET driver for high beam
+#define POTENTIOMETER_PIN   15  // Potentiometer pin
 
-// HTU21D myHumidity;
-// const int Interval = 15000;   // Interval for readouts (in ms)
-// unsigned long prevTime = -Interval;
+// LED Strip Settings
+#define LED_PIN    10
+#define LED_NUM    88
+#define LED_SPEED  500
 
-// float humd, temp;
-
-// Pindefinitions +++++++++++++++++
-#define buttonPin 16  // main control button
-#define mosfetDriverLow 12  // mosfet driver low beam (analogWrite)
-#define mosfetDriverHigh 11  // mosfet driver high beam (analogWrite)
-// #define batteryIndicator 6  // battery indicator pin 
-#define potentiometerPin 15 // potentiometer pin
-#define VoltageDividerPin 6 // Voltage divider pin
-#define controlBoxPower 7
-#define LedPower 13
-
-// LED Strip settings +++++++++++++
-#define ledPin 10
-#define ledNum 88 
-#define ledSpeed 500
-
-// Voltage divider settings +++++++
-#define R1 1000000  // R1 and R2 are the resistors in the voltage divider
-#define R2 300000  // R1 and R2 are the resistors in the voltage divider
-#define ADC_MAX 1023  // ADC resolution
-#define VCC 5000  // ADC reference voltage in mV
-#define partialShutdownVoltage 3300  // voltage at which the LED strip is shut down
-#define shutdownVoltage 3000  // voltage at which the entire system is shut down
-
-uint32_t currentColor = 65535;  // default LED color: pink-ish
-uint32_t currentColorHue = 1000;  // default LED color: pink-ish
-uint8_t currentBrightness = 150;  // default LED brightness
-uint8_t currentEffect = 0;
+// Default Settings
+uint32_t currentColor     = 65535;  // Default LED color (pink-ish)
+uint32_t currentColorHue  = 1000;   // Default LED hue
+uint8_t  currentBrightness = 150;   // Default LED brightness
+uint8_t  currentEffect     = 0;
 const uint8_t effects[] = {12, 11, 2, 7, 0, 1, 3, 5, 8, 13, 17, 18, 20, 27, 33, 39};
-// const uint16_t effectSpeed[] = {};
-// 17 slower, 27 color and speed = speed dependent
 
-// Constants ++++++++++++++++++++++
-#define LONG_PRESS_DURATION 1500  // 3000 milliseconds (3 secs)
-#define SEMI_LONG_PRESS_DURATION 1000  // 1000 milliseconds (1 sec)
-// #define DOUBLE_PRESS_TIMEOUT 300  // 300 milliseconds (0.3 secs)
+// Constants
+#define LONG_PRESS_DURATION 1500  // Duration for long press in milliseconds
 
-// Variables +++++++++++++++++++++
+// PWM Settings
+const int PWM_FREQ         = 5000; // PWM frequency in Hz
+const int PWM_RESOLUTION   = 8;    // PWM resolution in bits
+const int PWM_CHANNEL_LOW  = 0;    // PWM channel for low beam
+const int PWM_CHANNEL_HIGH = 1;    // PWM channel for high beam
+
+// Variables
 volatile bool state = false;
-volatile unsigned long disableBatteryIndicatorTimer = 0;
-
-const uint8_t potThreshhold = 50; // Threshold to register potentiometer change
-const uint8_t deadBand = 15; // deadband for potentiometer (effective deadband is 2*deadBand)
 const uint8_t numReadings = 10;
-int* readings = (int*)calloc(numReadings, sizeof(int));   // array with potentiometer readings to average and initialized to 0
+int readings[numReadings] = {0};  // Potentiometer readings for averaging
 uint8_t readIndex = 0;
 int total = 0;
-int average = 0;
 int previousPotValue = 0;
-int minPotValue = 0, maxPotValue = 0;
-bool potentiometerValueChanged = false, changeB = false;
-long hue;
-unsigned long previousTime = millis();
-int16_t potOffset = 0, potOffsetInit = 0;   // offset from max/min value of potentiometer and initial potvalue used for offset calculation
-bool colorInit = false;
 
-EasyButton button(buttonPin);
-WS2812FX ws2812fx = WS2812FX(ledNum, ledPin, NEO_RGB + NEO_KHZ800);
+// Objects
+EasyButton button(BUTTON_PIN);
+WS2812FX ws2812fx = WS2812FX(LED_NUM, LED_PIN, NEO_RGB + NEO_KHZ800);
 
+// Function Prototypes
 void initializePeripherals();
 void resetPeripherals();
 void buttonLongPressed();
-// void buttonDoublePressed();
 void buttonPressed();
-void changeColor();
-// void disableBatteryIndicator();
 void changeEffect();
 int readPotentiometer();
-int readVoltageDivider();
+void changeLight(int potValue);
 
 void setup() {
   Serial.begin(115200);
-
-  // set adc resolution to 10 bit
-  analogReadResolution(12);
+  analogReadResolution(12);  // Set ADC resolution to 12 bits
 
   initializePeripherals();
   resetPeripherals();
-  // myHumidity.begin();
 }
 
 void initializePeripherals() {
   button.begin();
   button.onPressed(buttonPressed);
-  // button.onSequence(2, DOUBLE_PRESS_TIMEOUT, buttonDoublePressed);
   button.onPressedFor(LONG_PRESS_DURATION, buttonLongPressed);
 
   ws2812fx.init();
   ws2812fx.setBrightness(currentBrightness);
-  ws2812fx.setSpeed(ledSpeed);
+  ws2812fx.setSpeed(LED_SPEED);
   ws2812fx.setColor(currentColor);
   ws2812fx.setMode(effects[currentEffect]);
   ws2812fx.start();
 
-  pinMode(mosfetDriverLow, OUTPUT);
-  pinMode(mosfetDriverHigh, OUTPUT);
-  // pinMode(batteryIndicator, OUTPUT);
-  pinMode(potentiometerPin, INPUT);
-  pinMode(VoltageDividerPin, INPUT);
+  // Set up PWM for MOSFET drivers
+  ledcSetup(PWM_CHANNEL_LOW, PWM_FREQ, PWM_RESOLUTION);
+  ledcAttachPin(MOSFET_DRIVER_LOW, PWM_CHANNEL_LOW);
+
+  ledcSetup(PWM_CHANNEL_HIGH, PWM_FREQ, PWM_RESOLUTION);
+  ledcAttachPin(MOSFET_DRIVER_HIGH, PWM_CHANNEL_HIGH);
+
+  pinMode(POTENTIOMETER_PIN, INPUT);
 }
 
 void resetPeripherals() {
   ws2812fx.setBrightness(0);
-
-  analogWrite(mosfetDriverHigh, 0);
-  analogWrite(mosfetDriverLow, 0);
-  // analogWrite(controlBoxPower, 0);
-  
-  disableBatteryIndicatorTimer = millis();
-  potentiometerValueChanged = false;
+  ledcWrite(PWM_CHANNEL_HIGH, 0);
+  ledcWrite(PWM_CHANNEL_LOW, 0);
 }
 
 void buttonPressed() {
-//   if (state == true && potentiometerValueChanged == false) {
   if (state) {
     changeEffect();
   }
 }
 
-// void buttonDoublePressed() {
-// }
-
 void buttonLongPressed() {
   Serial.println("Long Pressed");
-  // if turned off, turn on and exit function
-  if (state == false && readVoltageDivider() > shutdownVoltage) {
+  if (!state) {
     state = true;
     ws2812fx.setBrightness(currentBrightness);
     ws2812fx.setColor(currentColor);
-    // digitalWrite(batteryIndicator, HIGH);
-    // return;
-  }
-  // if turned on
-  else {
+  } else {
     state = false;
     resetPeripherals();
   }
 }
 
 void changeEffect() {
-  currentEffect++;
-  // apply modulo to currentEffect to loop through effects
-  if (currentEffect == sizeof(effects) / sizeof(uint8_t)) {
-    currentEffect = 0;
-  }
+  currentEffect = (currentEffect + 1) % (sizeof(effects) / sizeof(effects[0]));
   ws2812fx.setMode(effects[currentEffect]);
   Serial.println(effects[currentEffect]);
 }
 
-void changeColor() {
-  if (colorInit == false) {
-    colorInit = true;
-    potOffsetInit = readPotentiometer();    // initial potvalue used for offset calculation
-  }
-  hue = map(potOffsetInit - readPotentiometer(), 0, 1024, 0, 65600) + currentColorHue;  // hue is oldhue - newhue (hue difference) + the already set hue
-  // "modulo" for hue
-  if (hue > 65500) {
-    hue -= 65500;
-  }
-  else if (hue < 0) {
-    hue += 65500;
-  }
-
-  currentColorHue = hue;
-  currentColor = ws2812fx.ColorHSV(currentColorHue);
-  ws2812fx.setColor(currentColor);
-  potOffsetInit = readPotentiometer();
-}
-
-void changeBrightness() {
-  if (readVoltageDivider() < partialShutdownVoltage) {
-    return;
-  }
-  if (brightnessInit == false) {
-    brightnessInit = true;
-    // potOffsetInit = readPotentiometer();    // initial potvalue used for offset calculation
-    // potOffset = (1024 - potOffsetInit)%512;   // offset from max/min value
-  }
-  // currentBrightness = map(readPotentiometer(), potOffsetInit - potOffset, potOffsetInit + potOffset, 0, 255);
-  currentBrightness = map(readPotentiometer(), 0, 1024, 0, 255);
-  ws2812fx.setBrightness(currentBrightness);
-  // potOffsetInit = readPotentiometer();
-
-  // hue = map(potOffsetInit - readPotentiometer(), 0, 1024, 0, 255) + currentBrightness;  // hue is oldhue - newhue (hue difference) + the already set hue
-  // // "modulo" for hue
-  // if (hue > 255) {
-  //   hue -= 255;
-  // }
-  // else if (hue < 0) {
-  //   hue += 255;
-  // }
-
-  // currentBrightness = hue;
-  // ws2812fx.setBrightness(currentBrightness);
-  // potOffsetInit = readPotentiometer();
-}
-
-void disableBatteryIndicator() {
-  if (millis() - disableBatteryIndicatorTimer < 80) {
-    digitalWrite(batteryIndicator, LOW);
-  }
-  else if (millis() - disableBatteryIndicatorTimer < 160) {
-    digitalWrite(batteryIndicator, HIGH);
-  }
-  else {
-    digitalWrite(batteryIndicator, LOW);
-    disableBatteryIndicatorTimer = 0;
-  }
-}
-
-int readVoltageDivider() {  // returns battery voltage in mV
-  int voltageLevelRaw = analogRead(VoltageDividerPin) / ADC_MAX * VCC;
-  return voltageLevelRaw * (R1 + R2) / R2;
-}
-
 int readPotentiometer() {
   total -= readings[readIndex];
-  readings[readIndex] = analogRead(potentiometerPin);
+  readings[readIndex] = analogRead(POTENTIOMETER_PIN);
   total += readings[readIndex];
-  readIndex++;
-
-  if (readIndex >= numReadings) {
-    readIndex = 0;
-  }
-  average = total / numReadings;
-
-  if ((average > previousPotValue + deadBand) || (average < previousPotValue - deadBand)) {
-    previousPotValue = average;
-  }
-
-  if (previousPotValue < minPotValue) {
-    minPotValue = previousPotValue;
-  }
-  else if (previousPotValue > maxPotValue) {
-    maxPotValue = previousPotValue;
-  }
-  
-  if (maxPotValue - minPotValue > potThreshhold) {
-    potentiometerValueChanged = true;
-  }
-
+  readIndex = (readIndex + 1) % numReadings;
+  int average = total / numReadings;
+  previousPotValue = average;
   return previousPotValue;
 }
 
 void changeLight(int potValue) {
-  // 0-1800, 450-2160, 540-4096 (potentiometer reading)
-  int multiplier = 4;
   uint8_t pwm;
-  if (potValue < 420 * multiplier) {
-    pwm = map(potValue, 0, 420 * multiplier, 255, 0);
-    analogWrite(mosfetDriverLow, pwm);
+  if (potValue < 1680) {  // Low beam range
+    pwm = map(potValue, 0, 1680, 255, 0);
+    ledcWrite(PWM_CHANNEL_LOW, pwm);
+    ledcWrite(PWM_CHANNEL_HIGH, 0);
+  } else if (potValue < 2080) {  // Dead zone
+    ledcWrite(PWM_CHANNEL_LOW, 0);
+    ledcWrite(PWM_CHANNEL_HIGH, 0);
+  } else {  // High beam range
+    pwm = map(potValue, 2080, 4095, 0, 255);
+    ledcWrite(PWM_CHANNEL_LOW, 0);
+    ledcWrite(PWM_CHANNEL_HIGH, pwm);
   }
-  else if (potValue < 520 * multiplier) {
-    analogWrite(mosfetDriverLow, 0);
-    analogWrite(mosfetDriverHigh, 0);
-  }
-  else {
-    pwm = map(potValue, 520 * multiplier, 1024 * multiplier, 0, 255);
-    analogWrite(mosfetDriverHigh, pwm);
-  }
-  // Serial.println(potValue);
 }
 
 void loop() {
   button.read();
   ws2812fx.service();
 
-  // if (disableBatteryIndicatorTimer != 0) {
-  //   disableBatteryIndicator();
-  // }
-
-  // if (button.isPressed() == true && state == true) {
-  //   if (button.wasPressed() == true) {
-  //     minPotValue = readPotentiometer();
-  //     maxPotValue = minPotValue;
-  //     potentiometerValueChanged = false;
-  //     previousTime = millis();
-  //   }
-  //   // if SEMI_LONG_PRESS_DURATION passed and potentiometer value not changed, switch to brightness mode
-  //   if (millis() - previousTime > SEMI_LONG_PRESS_DURATION && potentiometerValueChanged == false) {
-  //     changeB = true;
-  //   }
-    
-  //   // if (changeB == true) {
-  //   //   changeBrightness();
-  //   // }
-  //   else {
-  //   changeColor();
-  //   }
-  // }
-  if(state == true) {
-  //   // changeB = false;
-  //   // brightnessInit = false;
-  //   // colorInit = false;
-  //   // Serial.println("Released");
+  if (state) {
     changeLight(readPotentiometer());
   }
-
-  if (state == true && readVoltageDivider() < partialShutdownVoltage && ws2812fx.getBrightness() != 0) {
-    ws2812fx.setBrightness(0);
-  }
-
-  if (readVoltageDivider() < shutdownVoltage) {
-    resetPeripherals();  // disable all peripherals
-    state = false;
-  }
-  // Serial.println(readPotentiometer());
-  // if (millis() - prevTime > Interval){
-  //   prevTime = millis();
-  //   if (humd < myHumidity.readHumidity()) {
-  //     humd = myHumidity.readHumidity();
-  //   }
-  //   if (temp < myHumidity.readTemperature()) {
-  //     temp = myHumidity.readTemperature();
-  //   }
-  //   Serial.println(temp, 1);
-  //   Serial.println(humd, 1);
-  // }
 }
