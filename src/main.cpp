@@ -5,6 +5,8 @@
 #include <BluetoothSerial.h>   // Include BluetoothSerial library
 #include <Preferences.h>       // Include Preferences library for NVS storage
 
+#define DEBUG
+
 // Pin Definitions
 constexpr uint8_t BUTTON_PIN          = 16;  // Main control button
 constexpr uint8_t MOSFET_DRIVER_LOW   = 12;  // MOSFET driver for low beam
@@ -82,7 +84,9 @@ void loadConfiguration();
 void saveConfiguration();
 
 void setup() {
-  Serial.begin(115200);
+  #ifdef DEBUG 
+    Serial.begin(115200);
+  #endif
   analogReadResolution(12);  // Set ADC resolution to 12 bits
 
   initializePeripherals();
@@ -116,7 +120,9 @@ void initializePeripherals() {
   // Initialize accelerometer
   Wire.begin();
   if (!lis.begin(Wire, 0x18)) {  // 0x18 is the default I2C address
-    Serial.println("Failed to initialize LIS3DHTR.");
+    #ifdef DEBUG 
+      Serial.println("Failed to initialize LIS3DHTR.") 
+    #endif;
     while (1);
   }
   lis.setOutputDataRate(LIS3DHTR_DATARATE_50HZ);
@@ -124,7 +130,9 @@ void initializePeripherals() {
 
   // Initialize Bluetooth
   SerialBT.begin("ESP32_Lights"); // Bluetooth device name
-  Serial.println("Bluetooth started. Waiting for connections...");
+  #ifdef DEBUG
+    Serial.println("Bluetooth started. Waiting for connections...");
+  #endif
 }
 
 void resetPeripherals() {
@@ -152,7 +160,9 @@ void buttonPressed() {
 }
 
 void buttonLongPressed() {
-  Serial.println("Long Pressed");
+  #ifdef DEBUG
+    Serial.println("Long Pressed");
+  #endif
   if (!state) {
     state = true;
     if (!orientationDisabled) {
@@ -168,7 +178,9 @@ void changeEffect() {
   currentEffect = (currentEffect + 1) % (sizeof(effects) / sizeof(effects[0]));
   ws2812fx.setMode(effects[currentEffect]);
   saveConfiguration(); // Save the new effect to NVS
-  Serial.println("Effect changed to: " + String(currentEffect));
+  #ifdef DEBUG
+    Serial.println("Effect changed to: " + String(currentEffect));
+  #endif
 }
 
 int readPotentiometer() {
@@ -221,7 +233,9 @@ void checkOrientation() {
         if (!orientationDisabled) {
           orientationDisabled = true;
           resetPeripherals();
-          Serial.println("Board is sideways. Shutting down lights.");
+          #ifdef DEBUG
+            Serial.println("Board is sideways. Shutting down lights.");
+          #endif
         }
       }
     }
@@ -233,7 +247,9 @@ void checkOrientation() {
       orientationDisabled = false;
       if (state) {
         restorePeripherals();
-        Serial.println("Board returned to normal orientation. Restoring lights.");
+        #ifdef DEBUG
+          Serial.println("Board returned to normal orientation. Restoring lights.");
+        #endif
       }
     }
   }
@@ -336,17 +352,19 @@ void loadConfiguration() {
   ACCEL_AUTO_STARTUP = preferences.getBool("ACCEL_AUTO_STARTUP", false);    // same here
   preferences.end();
 
-  Serial.println("Configuration loaded:");
-  Serial.println("Color: " + String(currentColor, HEX));
-  Serial.println("Brightness: " + String(currentBrightness));
-  Serial.println("Effect: " + String(currentEffect));
-  Serial.println();
-  Serial.println("Advanced configuration:");
-  Serial.println("LONG_PRESS_DURATION: " + String(LONG_PRESS_DURATION));
-  Serial.println("SIDEWAYS_THRESHOLD_TIME: " + String(SIDEWAYS_THRESHOLD_TIME));
-  Serial.println("SIDEWAYS_ACCEL_THRESHOLD: " + String(SIDEWAYS_ACCEL_THRESHOLD));
-  Serial.println("ACCEL_AUTO_SHUTDOWN: " + String(ACCEL_AUTO_SHUTDOWN));
-  Serial.println("ACCEL_AUTO_STARTUP: " + String(ACCEL_AUTO_STARTUP));
+  #ifdef DEBUG
+    Serial.println("Configuration loaded:");
+    Serial.println("Color: " + String(currentColor, HEX));
+    Serial.println("Brightness: " + String(currentBrightness));
+    Serial.println("Effect: " + String(currentEffect));
+    Serial.println();
+    Serial.println("Advanced configuration:");
+    Serial.println("LONG_PRESS_DURATION: " + String(LONG_PRESS_DURATION));
+    Serial.println("SIDEWAYS_THRESHOLD_TIME: " + String(SIDEWAYS_THRESHOLD_TIME));
+    Serial.println("SIDEWAYS_ACCEL_THRESHOLD: " + String(SIDEWAYS_ACCEL_THRESHOLD));
+    Serial.println("ACCEL_AUTO_SHUTDOWN: " + String(ACCEL_AUTO_SHUTDOWN));
+    Serial.println("ACCEL_AUTO_STARTUP: " + String(ACCEL_AUTO_STARTUP));
+  #endif
 }
 
 
@@ -362,7 +380,9 @@ void saveConfiguration() {
   preferences.putBool("ACCEL_AUTO_STARTUP", ACCEL_AUTO_STARTUP);
   preferences.end();
 
-  Serial.println("Configuration saved.");
+  #ifdef DEBUG
+    Serial.println("Configuration saved.");
+  #endif
 }
 
 
