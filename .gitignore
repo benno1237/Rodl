@@ -227,3 +227,9 @@ bh_unicode_properties.cache
 # https://packagecontrol.io/packages/sublime-github
 GitHub.sublime-settings
 
+.pioenvs
+.piolibdeps
+.clang_complete
+.gcc-flags.json
+.pio
+.vscode
