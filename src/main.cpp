@@ -57,8 +57,10 @@ constexpr uint8_t LED_DEFAULT_EFFECT = 0;       // Default LED effect
 
 // Advanced Settings (will be used if no stored values are found)
 constexpr uint16_t DEFAULT_LONG_PRESS_DURATION = 1500;     // Duration for long press in milliseconds
-constexpr uint16_t DEFAULT_SIDEWAYS_THRESHOLD_TIME = 5000; // Time in milliseconds to detect sideways orientation
+constexpr uint16_t DEFAULT_SIDEWAYS_THRESHOLD_TIME = 1000; // Time in milliseconds to detect sideways orientation
 constexpr float DEFAULT_SIDEWAYS_ACCEL_THRESHOLD = 0.7;    // Acceleration threshold for sideways detection (in g)
+constexpr bool DEFAULT_ACCEL_AUTO_SHUTDOWN = true;        // Automatically shut down if the sledge is sideways
+constexpr bool DEFAULT_ACCEL_AUTO_STARTUP = false;         // Automatically start back up if the sledge is on the ground again
 
 // Variables (will be loaded from storage or defaulted)
 uint32_t currentColor;
@@ -482,9 +484,10 @@ void checkOrientation()
     {
       if (millis() - sidewaysStartTime >= SIDEWAYS_THRESHOLD_TIME)
       {
-        if (!orientationDisabled)
+        if (!orientationDisabled && ACCEL_AUTO_SHUTDOWN) // shut down if the sledge is sideways
         {
           orientationDisabled = true;
+          state = false;
           resetPeripherals();
 #ifdef DEBUG
           Serial.println("Board is sideways. Shutting down lights.");
@@ -501,8 +504,9 @@ void checkOrientation()
     if (orientationDisabled)
     {
       orientationDisabled = false;
-      if (state)
+      if (state == false && ACCEL_AUTO_STARTUP)  // start back up if the sledge is on the ground again
       {
+        state = true;
         restorePeripherals();
 #ifdef DEBUG
         Serial.println("Board returned to normal orientation. Restoring lights.");
@@ -522,9 +526,12 @@ void loadConfiguration()
   LONG_PRESS_DURATION = preferences.getUShort("LPD", DEFAULT_LONG_PRESS_DURATION);
   SIDEWAYS_THRESHOLD_TIME = preferences.getUShort("STT", DEFAULT_SIDEWAYS_THRESHOLD_TIME);
   SIDEWAYS_ACCEL_THRESHOLD = preferences.getFloat("SAT", DEFAULT_SIDEWAYS_ACCEL_THRESHOLD);
-  ACCEL_AUTO_SHUTDOWN = preferences.getBool("AASD", false); // this surely defaults to false
-  ACCEL_AUTO_STARTUP = preferences.getBool("AASU", false);  // same here
+  ACCEL_AUTO_SHUTDOWN = preferences.getBool("AASD", DEFAULT_ACCEL_AUTO_SHUTDOWN);
+  ACCEL_AUTO_STARTUP = preferences.getBool("AASU", DEFAULT_ACCEL_AUTO_STARTUP); 
   preferences.end();
+
+  // for now, force accel_auto_startup to true
+  ACCEL_AUTO_STARTUP = true;
 
 #ifdef DEBUG
   Serial.println("Configuration loaded:");
@@ -571,6 +578,8 @@ void loop()
   }
 
 #ifdef ACC
-  checkOrientation();
+  if (ACCEL_AUTO_SHUTDOWN) {  // Only check orientation if auto shutdown is enabled
+    checkOrientation();
+  }
 #endif
 }
