@@ -1,4 +1,0 @@
-(design_block_lib_table
-  (version 7)
-  (lib (name "3dshapes")(type "KiCad")(uri "${KIPRJMOD}/libraries/3dshapes")(options "")(descr ""))
-)
