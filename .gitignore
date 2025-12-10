@@ -295,9 +295,9 @@ fp-info-cache
 **/*.wrl
 **/*.step
 **/*.stp
-!**/3d_models/**/*.wrl
-!**/3d_models/**/*.step
-!**/3d_models/**/*.stp
+!**/3dshapes/**/*.wrl
+!**/3dshapes/**/*.step
+!**/3dshapes/**/*.stp
 
 # ------------------------------------------------------------
 # Plot / Output / Fabrication
