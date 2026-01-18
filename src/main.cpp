@@ -25,19 +25,18 @@
 #include <WS2812FX.h>
 
 // Pin Definitions
-constexpr uint8_t BUTTON_PIN = 7;          // Main control button
-constexpr uint8_t MOSFET_DRIVER_LOW = 19;  // MOSFET driver for low beam
-constexpr uint8_t MOSFET_DRIVER_HIGH = 20; // MOSFET driver for high beam
-constexpr uint8_t POT_PIN = 5;             // Potentiometer pin
-constexpr uint8_t POT_ENABLE = 15;         // Pot enable pin
-constexpr uint8_t ACC_CS_PIN = 10;         // Accelerometer chip select pin
-constexpr uint8_t ACC_SCL_PIN = 12;        // Accelerometer clock pin
-constexpr uint8_t ACC_SDA_PIN = 11;        // Accelerometer data pin
+constexpr uint8_t BUTTON_PIN = 8;        // Main control button
+constexpr uint8_t LED_LOW_PIN = 17;      // Low beam LED driver
+constexpr uint8_t LED_HIGH_PIN = 18;     // High beam LED driver
+constexpr uint8_t POT_PIN = 5;           // Potentiometer pin
+constexpr uint8_t POT_ENABLE = 10;       // Pot enable pin
+constexpr uint8_t ACC_SCL_PIN = 13;      // Accelerometer clock pin
+constexpr uint8_t ACC_SDA_PIN = 14;      // Accelerometer data pin
+constexpr uint8_t ACC_INT_PIN = 15;      // Accelerometer interrupt pin
 
 // LED Strip Settings
-constexpr uint8_t LED_PIN = 8;         // WS2815 LED control pin
-constexpr uint8_t LED_BACKUP_PIN = 16; // Backup LED control pin
-constexpr uint8_t LED_NUM = 10;        // LED amount
+constexpr uint8_t LED_PIN = 16;          // WS2815 LED control pin
+constexpr uint8_t LED_NUM = 10;          // LED amount
 constexpr uint16_t LED_SPEED = 500;    // LED update speed
 
 // Constants
@@ -325,22 +324,19 @@ void initializePeripherals()
 
   // Set up PWM for MOSFET drivers
   ledcSetup(PWM_CHANNEL_LOW, PWM_FREQ, PWM_RESOLUTION);
-  ledcAttachPin(MOSFET_DRIVER_LOW, PWM_CHANNEL_LOW);
-  // ledcAttachChannel(MOSFET_DRIVER_LOW, PWM_FREQ, PWM_RESOLUTION, PWM_CHANNEL_LOW);
+  ledcAttachPin(LED_LOW_PIN, PWM_CHANNEL_LOW);
+  // ledcAttachChannel(LED_LOW_PIN, PWM_FREQ, PWM_RESOLUTION, PWM_CHANNEL_LOW);
 
   ledcSetup(PWM_CHANNEL_HIGH, PWM_FREQ, PWM_RESOLUTION);
-  ledcAttachPin(MOSFET_DRIVER_HIGH, PWM_CHANNEL_HIGH);
-  // ledcAttachChannel(MOSFET_DRIVER_HIGH, PWM_FREQ, PWM_RESOLUTION, PWM_CHANNEL_HIGH);
+  ledcAttachPin(LED_HIGH_PIN, PWM_CHANNEL_HIGH);
+  // ledcAttachChannel(LED_HIGH_PIN, PWM_FREQ, PWM_RESOLUTION, PWM_CHANNEL_HIGH);
 
   pinMode(POT_PIN, INPUT);
   pinMode(POT_ENABLE, OUTPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
-  pinMode(LED_BACKUP_PIN, OUTPUT);
 
   // Initialize accelerometer
 #ifdef ACC
-  pinMode(ACC_CS_PIN, OUTPUT);
-  digitalWrite(ACC_CS_PIN, HIGH); // Enable the accelerometer
   Wire.setPins(ACC_SDA_PIN, ACC_SCL_PIN);
   lis.begin(Wire, 0x18); // Initialize the LIS3DHTR sensor
   if (!lis.isConnection())
@@ -362,7 +358,6 @@ void initializePeripherals()
 
 void resetPeripherals()
 {
-  digitalWrite(LED_BACKUP_PIN, LOW);
   digitalWrite(POT_ENABLE, HIGH); // Reversed, turn off pot
   ws2812fx.stop();                // Stop the LED effects
   ws2812fx.setBrightness(0);      // Turn off LED strip
