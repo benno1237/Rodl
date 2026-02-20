@@ -41,8 +41,8 @@ constexpr uint16_t LED_SPEED = 500;    // LED update speed
 // GPS Settings
 constexpr uint32_t GPS_BAUDRATE = 115200;
 constexpr uint16_t GPS_UPDATE_INTERVAL_MS = 100;  // 10Hz update rate
-constexpr uint16_t MAX_RIDES = 5;
-constexpr uint16_t POINTS_PER_RIDE = 6000;  // 10Hz × 600 seconds = 10 minutes (max)
+constexpr uint16_t MAX_RIDES = 2;
+constexpr uint16_t POINTS_PER_RIDE = 100;  // 10Hz × 600 seconds = 10 minutes (max)
 
 // Constants
 constexpr uint8_t numReadings = 10;                                                  // Amount of pot values to average
@@ -111,6 +111,8 @@ uint16_t rideCounts[MAX_RIDES] = {0};
 uint8_t currentRideIndex = 0;
 bool isGPSLogging = false;
 unsigned long lastGPSLogTime = 0;
+unsigned long lastGPSStatsPrint = 0;
+constexpr uint16_t GPS_STATS_PRINT_INTERVAL_MS = 500;
 TinyGPSPlus gps;
 HardwareSerial gpsSerial(2);  // UART2 for GPS
 #endif
@@ -393,13 +395,13 @@ bool saveRideToFS(uint8_t rideIndex)
 
 void processGPSData()
 {
-  if (!isGPSLogging) return;
-
-  // Read all available GPS data
+  // Read all available GPS data (always, even when not logging)
   while (gpsSerial.available()) {
     char c = gpsSerial.read();
     gps.encode(c);
   }
+
+  if (!isGPSLogging) return;
 
   // Check if we have a valid fix and it's time to log
   // Only log if location is updated AND we have valid data for key fields
@@ -422,7 +424,7 @@ void processGPSData()
       p.sats = gps.satellites.isValid() ? gps.satellites.value() : 0;
       // Only use HDOP if valid
       p.hdop = gps.hdop.isValid() ? gps.hdop.hdop() : 99.9;
-      p.age = gps.age();
+      p.age = gps.location.age();
 
       rideCounts[currentRideIndex]++;
       lastGPSLogTime = millis();
@@ -436,10 +438,57 @@ void processGPSData()
     }
   }
 }
-#endif
+
+void printGPSStats()
+{
+#ifdef DEBUG
+  if (state && (millis() - lastGPSStatsPrint >= GPS_STATS_PRINT_INTERVAL_MS)) {
+    lastGPSStatsPrint = millis();
+    Serial.print("GPS: ");
+    if (gps.satellites.isValid()) {
+      Serial.print("Sats: ");
+      Serial.print(gps.satellites.value());
+    } else {
+      Serial.print("Sats: --");
     }
+    Serial.print(" | ");
+    if (gps.location.isValid()) {
+      Serial.print("Lat: ");
+      Serial.print(gps.location.lat(), 6);
+      Serial.print(" Lon: ");
+      Serial.print(gps.location.lng(), 6);
+    } else {
+      Serial.print("No fix");
+    }
+    Serial.print(" | Speed: ");
+    if (gps.speed.isValid()) {
+      Serial.print(gps.speed.kmph(), 1);
+    } else {
+      Serial.print("--");
+    }
+    Serial.print(" km/h | Alt: ");
+    if (gps.altitude.isValid()) {
+      Serial.print(gps.altitude.meters(), 1);
+    } else {
+      Serial.print("--");
+    }
+    Serial.print("m | HDOP: ");
+    if (gps.hdop.isValid()) {
+      Serial.print(gps.hdop.hdop(), 1);
+    } else {
+      Serial.print("--");
+    }
+    Serial.print(" | Logging: ");
+    Serial.print(isGPSLogging ? "YES" : "NO");
+    Serial.print(" (");
+    Serial.print(rideCounts[currentRideIndex]);
+    Serial.print("/");
+    Serial.print(POINTS_PER_RIDE);
+    Serial.println(")");
   }
+#endif
 }
+
 #endif
 
 void restorePeripherals()
@@ -663,12 +712,31 @@ void loop()
   }
 
 #ifdef ACC
-  if (ACCEL_AUTO_SHUTDOWN) {  // Only check orientation if auto shutdown is enabled
+  if (ACCEL_AUTO_SHUTDOWN) {
     checkOrientation();
   }
 #endif
 
 #ifdef GPS
   processGPSData();
+  printGPSStats();
 #endif
 }
+
+// #include <Arduino.h>
+
+// void setup() {
+//   Serial.begin(115200);
+//   Serial.println("Hello, World!");
+//   pinMode(4, OUTPUT);
+//   pinMode(6, OUTPUT); 
+//   digitalWrite(6, HIGH); // Turn on the potentiometer (reversed logic)
+// }
+
+// void loop() {
+//   // Example: Blink an LED connected to pin 4
+//   digitalWrite(6, HIGH);
+//   delay(2000);
+//   digitalWrite(6, LOW);
+//   delay(2000);
+// }
