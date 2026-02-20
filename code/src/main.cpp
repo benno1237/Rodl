@@ -9,10 +9,15 @@
 #define DEBUG
 #define ACC
 #define GPS
+#define BLE
 
 #ifdef ACC
 #include <Wire.h>    // Include the Wire library
 #include "LIS3DHTR.h" // Include the LIS3DHTR library
+#endif
+
+#ifdef BLE
+#include <NimBLEDevice.h>
 #endif
 
 #define __MINMAX_H__ // Fix for conflicting min/max definitions
@@ -36,7 +41,7 @@ constexpr uint8_t GPS_TX_PIN = 18;       // GPS TX (ESP32 RX)
 // LED Strip Settings
 constexpr uint8_t LED_PIN = 12;          // WS2815 LED control pin
 constexpr uint8_t LED_NUM = 10;          // LED amount
-constexpr uint16_t LED_SPEED = 500;    // LED update speed
+uint16_t LED_SPEED = 500;    // LED update speed
 
 // GPS Settings
 constexpr uint32_t GPS_BAUDRATE = 115200;
@@ -117,6 +122,16 @@ TinyGPSPlus gps;
 HardwareSerial gpsSerial(2);  // UART2 for GPS
 #endif
 
+// BLE Variables
+#ifdef BLE
+#define BLE_SERVICE_UUID "12345678-1234-1234-1234-123456789abc"
+#define BLE_SETTINGS_UUID "12345678-1234-1234-1234-123456789abd"
+NimBLEServer* pServer = nullptr;
+NimBLEService* pService = nullptr;
+NimBLECharacteristic* pSettingsCharacteristic = nullptr;
+bool bleConnected = false;
+#endif
+
 // Preferences
 Preferences preferences;
 
@@ -145,6 +160,13 @@ void stopGPSLogging();
 bool saveRideToFS(uint8_t rideIndex);
 uint8_t getOldestRideIndex();
 void processGPSData();
+#endif
+#ifdef BLE
+void initBLE();
+void startBLE();
+void stopBLE();
+void applySettings();
+void sendSettingsResponse();
 #endif
 
 void setup()
@@ -533,6 +555,9 @@ void buttonLongPressed()
 #ifdef GPS
     startGPSLogging();
 #endif
+#ifdef BLE
+    startBLE();
+#endif
     if (!orientationDisabled)
     {
       restorePeripherals();
@@ -542,6 +567,9 @@ void buttonLongPressed()
   {
     state = false;
     resetPeripherals();
+#ifdef BLE
+    stopBLE();
+#endif
   }
 }
 
@@ -699,6 +727,142 @@ void saveConfiguration()
   Serial.println("Configuration saved.");
 #endif
 }
+
+#ifdef BLE
+class SettingsCallback : public NimBLECharacteristicCallbacks {
+  void onWrite(NimBLECharacteristic* pCharacteristic) {
+    std::string value = pCharacteristic->getValue();
+    if (value.length() == 0) return;
+
+    if (value[0] == 0x01) {
+      sendSettingsResponse();
+      return;
+    }
+
+    if (value.length() < 15) {
+#ifdef DEBUG
+      Serial.println("Invalid settings data length");
+#endif
+      return;
+    }
+
+    currentColor = (value[0] << 24) | (value[1] << 16) | (value[2] << 8) | value[3];
+    currentBrightness = value[4];
+    currentEffect = value[5];
+    LED_SPEED = (value[6] << 8) | value[7];
+    LONG_PRESS_DURATION = (value[8] << 8) | value[9];
+    SIDEWAYS_THRESHOLD_TIME = (value[10] << 8) | value[11];
+    SIDEWAYS_ACCEL_THRESHOLD = value[12] / 10.0;
+    ACCEL_AUTO_SHUTDOWN = value[13] == 1;
+    ACCEL_AUTO_STARTUP = value[14] == 1;
+
+    saveConfiguration();
+    applySettings();
+
+#ifdef DEBUG
+    Serial.println("Settings received via BLE");
+#endif
+  }
+};
+
+class ServerCallback : public NimBLEServerCallbacks {
+  void onConnect(NimBLEServer* pServer) {
+    bleConnected = true;
+#ifdef DEBUG
+    Serial.println("BLE client connected");
+#endif
+  }
+
+  void onDisconnect(NimBLEServer* pServer) {
+    bleConnected = false;
+#ifdef DEBUG
+    Serial.println("BLE client disconnected");
+#endif
+  }
+};
+
+void initBLE() {
+  String deviceName = "RODL-";
+  uint8_t mac[6];
+  esp_read_mac(mac, ESP_MAC_WIFI_STA);
+  char macStr[5];
+  snprintf(macStr, sizeof(macStr), "%02X%02X", mac[4], mac[5]);
+  deviceName += macStr;
+  
+  NimBLEDevice::init(deviceName.c_str());
+  NimBLEDevice::setPower(ESP_PWR_LVL_P9);
+  pServer = NimBLEDevice::createServer();
+  pServer->setCallbacks(new ServerCallback());
+  
+  pService = pServer->createService(BLE_SERVICE_UUID);
+  pSettingsCharacteristic = pService->createCharacteristic(
+    BLE_SETTINGS_UUID,
+    NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::NOTIFY
+  );
+  pSettingsCharacteristic->setCallbacks(new SettingsCallback());
+  
+  pService->start();
+}
+
+void startBLE() {
+  if (pServer == nullptr) {
+    initBLE();
+  }
+  NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
+  pAdvertising->addServiceUUID(BLE_SERVICE_UUID);
+  pAdvertising->setScanResponse(true);
+  pAdvertising->start();
+#ifdef DEBUG
+  Serial.println("BLE started advertising");
+#endif
+}
+
+void stopBLE() {
+  NimBLEDevice::stopAdvertising();
+  if (pServer) {
+    pServer->disconnect(0);
+  }
+#ifdef DEBUG
+  Serial.println("BLE stopped");
+#endif
+}
+
+void applySettings() {
+  ws2812fx.setBrightness(currentBrightness);
+  ws2812fx.setColor(currentColor);
+  ws2812fx.setSpeed(LED_SPEED);
+  ws2812fx.setMode(effects[currentEffect]);
+  ws2812fx.start();
+}
+
+void sendSettingsResponse() {
+  if (pSettingsCharacteristic == nullptr) return;
+
+  uint8_t data[15];
+  data[0] = (currentColor >> 24) & 0xFF;
+  data[1] = (currentColor >> 16) & 0xFF;
+  data[2] = (currentColor >> 8) & 0xFF;
+  data[3] = currentColor & 0xFF;
+  data[4] = currentBrightness;
+  data[5] = currentEffect;
+  data[6] = (LED_SPEED >> 8) & 0xFF;
+  data[7] = LED_SPEED & 0xFF;
+  data[8] = (LONG_PRESS_DURATION >> 8) & 0xFF;
+  data[9] = LONG_PRESS_DURATION & 0xFF;
+  data[10] = (SIDEWAYS_THRESHOLD_TIME >> 8) & 0xFF;
+  data[11] = SIDEWAYS_THRESHOLD_TIME & 0xFF;
+  data[12] = (uint8_t)(SIDEWAYS_ACCEL_THRESHOLD * 10);
+  data[13] = ACCEL_AUTO_SHUTDOWN ? 1 : 0;
+  data[14] = ACCEL_AUTO_STARTUP ? 1 : 0;
+
+  pSettingsCharacteristic->setValue(data, 15);
+  pSettingsCharacteristic->notify();
+
+#ifdef DEBUG
+  Serial.println("Settings response sent");
+#endif
+}
+#endif
 
 void loop()
 {
