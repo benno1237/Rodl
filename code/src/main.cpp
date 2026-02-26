@@ -35,8 +35,8 @@ constexpr uint8_t ACC_SDA_PIN = 10;      // Accelerometer data pin
 constexpr uint8_t ACC_INT_PIN = 11;      // Accelerometer interrupt pin
 
 // GPS Pin Definitions
-constexpr uint8_t GPS_RX_PIN = 17;       // GPS RX (ESP32 TX)
-constexpr uint8_t GPS_TX_PIN = 18;       // GPS TX (ESP32 RX)
+constexpr uint8_t GPS_RX_PIN = 18;       // GPS RX (ESP32 TX)
+constexpr uint8_t GPS_TX_PIN = 17;       // GPS TX (ESP32 RX)
 
 // LED Strip Settings
 constexpr uint8_t LED_PIN = 12;          // WS2815 LED control pin
