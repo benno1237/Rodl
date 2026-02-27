@@ -108,6 +108,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           );
         },
       ),
+      endDrawerEnableOpenDragGesture: true,
     );
   }
 

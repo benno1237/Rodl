@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import '../models/sled.dart';
 import '../providers/rides_provider.dart';
+import '../widgets/sled_card.dart';
+import '../widgets/g_plot.dart';
 import 'day_detail_screen.dart';
 import 'settings_screen.dart';
+import 'sled_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -21,8 +25,32 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  double gx = 0.0;
+  double gy = 0.0;
+
+  int _selectedIndex = 0;
+
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final List<Sled> sleds = [
+      Sled(
+        id: "SLED-001",
+        name: "Red Lightning",
+        imagePath: "assets/images/Rodel_rot.png",
+      ),
+      Sled(
+        id: "SLED-002",
+        name: "Blue Thunder",
+        imagePath: "assets/images/Rodel_blau.png",
+      ),
+    ];
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Rodl'),
@@ -39,6 +67,87 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.dashboard),
+            label: "Rodls",
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.lightbulb),
+            label: "Rides",
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.sensors),
+            label: "Tracks",
+          ),
+        ],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: _buildSelectedTab(),
+      ),
+    );
+  }
+
+  Widget _buildSelectedTab() {
+    switch (_selectedIndex) {
+      case 0:
+        return _buildRodls();
+      case 1:
+        return _buildRides();
+      case 2:
+        return const Center(child: Text("Sensors coming soon"));
+      default:
+        return const SizedBox();
+    }
+  }
+
+  Widget _buildRodls() {
+    final List<Sled> sleds = [
+      Sled(
+        id: "SLED-001",
+        name: "Red Lightning",
+        imagePath: "assets/images/Rodel_rot.png",
+      ),
+      Sled(
+        id: "SLED-002",
+        name: "Blue Thunder",
+        imagePath: "assets/images/Rodel_blau.png",
+      ),
+    ];
+
+    return Scaffold(
+      body: Column(
+        children: [
+          Expanded(
+            child: ListView.builder(
+              itemCount: sleds.length,
+              itemBuilder: (context, index) {
+                return SledCard(
+                  sled: sleds[index],
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            SledDetailScreen(sled: sleds[index]),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRides() {
+    return Scaffold(
       body: Consumer<RidesProvider>(
         builder: (context, ridesProvider, child) {
           final ridesByDay = ridesProvider.ridesByDay;
@@ -137,7 +246,7 @@ class _HomeScreenState extends State<HomeScreen> {
             },
           );
         },
-      ),
+      ),    
     );
   }
 
