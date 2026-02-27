@@ -4,7 +4,6 @@ import 'package:intl/intl.dart';
 import '../models/sled.dart';
 import '../providers/rides_provider.dart';
 import '../widgets/sled_card.dart';
-import '../widgets/g_plot.dart';
 import 'day_detail_screen.dart';
 import 'settings_screen.dart';
 import 'sled_detail_screen.dart';
@@ -38,19 +37,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final List<Sled> sleds = [
-      Sled(
-        id: "SLED-001",
-        name: "Red Lightning",
-        imagePath: "assets/images/Rodel_rot.png",
-      ),
-      Sled(
-        id: "SLED-002",
-        name: "Blue Thunder",
-        imagePath: "assets/images/Rodel_blau.png",
-      ),
-    ];
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Rodl'),
@@ -111,11 +97,15 @@ class _HomeScreenState extends State<HomeScreen> {
         id: "SLED-001",
         name: "Red Lightning",
         imagePath: "assets/images/Rodel_rot.png",
+        primaryColor: const Color(0xFFE53935),
+        secondaryColor: const Color(0xFFFFCDD2),
       ),
       Sled(
         id: "SLED-002",
         name: "Blue Thunder",
         imagePath: "assets/images/Rodel_blau.png",
+        primaryColor: const Color(0xFF1E88E5),
+        secondaryColor: const Color(0xFFBBDEFB),
       ),
     ];
 

@@ -1,5 +1,5 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:rodl/models/settings.dart';
 import '../models/sled.dart';
 import '../widgets/g_plot.dart';
 import '../widgets/color_bar_slider.dart';
@@ -20,6 +20,15 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
   double gx = 0.0;
   double gy = 0.0;
 
+  late final ValueNotifier<Offset> _gNotifier;
+  StreamSubscription? _gSub;
+
+  @override
+  void setState(VoidCallback fn) {
+    if (!mounted) return;
+    super.setState(fn);
+  }
+
   int _selectedIndex = 0;
 
   // Frontlight
@@ -39,60 +48,115 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
   @override
   void initState() {
     super.initState();
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<SettingsProvider>().connect();
     });
 
     // Simulated live updates (replace later with BLE stream)
-    Stream.periodic(const Duration(milliseconds: 100), (i) {
+    _gNotifier = ValueNotifier(const Offset(0, 0));
+    _gSub = Stream.periodic(const Duration(milliseconds: 100), (i) {
       return (
         (i % 100) / 50 - 1,
         ((i * 1.3) % 100) / 50 - 1,
       );
     }).listen((value) {
-      setState(() {
-        gx = value.$1;
-        gy = value.$2;
-      });
+      _gNotifier.value = Offset(value.$1, value.$2);
     });
   }
 
   @override
+  void dispose() {
+    _gSub?.cancel();
+    _gNotifier.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final sled = widget.sled; // <-- IMPORTANT change
+    final sled = widget.sled;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(sled.name),
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard),
-            label: "Overview",
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.lightbulb),
-            label: "LEDs",
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.sensors),
-            label: "Sensors",
-          ),
-        ],
-      ),
-      body: Consumer<SettingsProvider>(
-        builder: (context, provider, child) {
-          final settings = provider.settings;
+    // Build a ThemeData from the sled colors and wrap the screen so
+    // the sled's color scheme is applied to this route only.
+    final colorScheme = ColorScheme.light(
+      primary: sled.primaryColor,
+      secondary: sled.secondaryColor,
+    );
 
-          return Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: _buildSelectedTab(context, provider, settings.color)
-      );
-    },
+    final sledTheme = ThemeData.from(colorScheme: colorScheme).copyWith(
+      appBarTheme: Theme.of(context).appBarTheme.copyWith(
+        backgroundColor: sled.primaryColor,
+        foregroundColor: colorScheme.onPrimary,
+      ),
+      cardTheme: CardThemeData(
+        color: colorScheme.surfaceContainerHighest,
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      chipTheme: ChipThemeData(
+        backgroundColor: colorScheme.secondaryContainer,
+        disabledColor: colorScheme.onSurface.withOpacity(0.12),
+        selectedColor: colorScheme.primary,
+        secondarySelectedColor: colorScheme.primaryContainer,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        labelStyle: TextStyle(color: colorScheme.onSecondary),
+        secondaryLabelStyle: TextStyle(color: colorScheme.onPrimary),
+        brightness: Brightness.light,
+        shape: const StadiumBorder(),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: colorScheme.primary,
+          foregroundColor: colorScheme.onPrimary,
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(foregroundColor: colorScheme.primary),
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: colorScheme.primary,
+        foregroundColor: colorScheme.onPrimary,
+      ),
+      bottomNavigationBarTheme: BottomNavigationBarThemeData(
+        backgroundColor: colorScheme.surface,
+        selectedItemColor: colorScheme.primary,
+        unselectedItemColor: colorScheme.onSurface.withOpacity(0.6),
+      ),
+    );
+
+    return Theme(
+      data: sledTheme,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(sled.name),
+        ),
+        bottomNavigationBar: BottomNavigationBar(
+          currentIndex: _selectedIndex,
+          onTap: _onItemTapped,
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.dashboard),
+              label: "Overview",
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.lightbulb),
+              label: "LEDs",
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.sensors),
+              label: "Sensors",
+            ),
+          ],
+        ),
+        body: Consumer<SettingsProvider>(
+          builder: (context, provider, child) {
+            final settings = provider.settings;
+
+            return Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: _buildSelectedTab(context, provider, settings.color, colorScheme),
+            );
+          },
+        ),
       ),
     );
   }
@@ -101,12 +165,13 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
     BuildContext context,
     SettingsProvider provider,
     int color,
+    ColorScheme colorScheme,
   ) {
     switch (_selectedIndex) {
       case 0:
-        return _buildOverview(context, provider);
+        return _buildOverview(context, provider, colorScheme);
       case 1:
-        return _buildLedControl(context, provider, color);
+        return _buildLedControl(context, provider, color, colorScheme);
       case 2:
         // return const Center(child: Text("Sensors coming soon"));
         return _buildSensorGraphs();
@@ -118,6 +183,7 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
   Widget _buildOverview(
     BuildContext context,
     SettingsProvider provider,
+    ColorScheme colorScheme,
   ) {
     final sled = widget.sled;
 
@@ -126,20 +192,86 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Image.asset(
-                sled.imagePath,
+              SizedBox(
                 height: 200,
-                fit: BoxFit.contain,
+                child: Image.asset(
+                  sled.imagePath,
+                  fit: BoxFit.fitHeight,
+                  alignment: Alignment.centerLeft,
+                ),
               ),
-              const SizedBox(width: 16),
-              _buildConnectionStatus(provider.isConnected),
-              const Expanded(
-                child: Text(
-                  "Battery: 80%\n"
-                  "Total Distance: 12.5 km\n"
-                  "Total Time: 45 minutes\n"
-                  "Last Ride: 2024-06-01\n",
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildConnectionStatus(provider.isConnected),
+                    const SizedBox(height: 8),
+                    Card(
+                      elevation: 1,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.battery_full, size: 20),
+                                const SizedBox(width: 8),
+                                const Text('Battery', style: TextStyle(fontWeight: FontWeight.w600)),
+                                const Spacer(),
+                                const Text('80%', style: TextStyle(fontWeight: FontWeight.w700)),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: LinearProgressIndicator(
+                                value: 0.8,
+                                minHeight: 6,
+                                backgroundColor: Theme.of(context).colorScheme.onSurface.withOpacity(0.06),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                const Icon(Icons.place, size: 18),
+                                const SizedBox(width: 8),
+                                const Text('Total Distance', style: TextStyle(fontWeight: FontWeight.w600)),
+                                const Spacer(),
+                                const Text('12.5 km', style: TextStyle(fontWeight: FontWeight.w500)),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                const Icon(Icons.timer, size: 18),
+                                const SizedBox(width: 8),
+                                const Text('Total Time', style: TextStyle(fontWeight: FontWeight.w600)),
+                                const Spacer(),
+                                const Text('45 min', style: TextStyle(fontWeight: FontWeight.w500)),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                const Icon(Icons.calendar_today, size: 18),
+                                const SizedBox(width: 8),
+                                const Text('Last Ride', style: TextStyle(fontWeight: FontWeight.w600)),
+                                const Spacer(),
+                                const Text('2024-06-01', style: TextStyle(fontWeight: FontWeight.w500)),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -163,8 +295,9 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
                       divisions: 25,
                       suffix: 'ms',
                       onChanged: (v) => provider.updateLongPressDuration(v.round()),
+                      colorScheme: colorScheme,
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 5),
                     _buildSlider(
                       title: 'Sideways Threshold Time',
                       value: provider.settings.sidewaysThresholdTime.toDouble(),
@@ -174,8 +307,9 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
                       suffix: 'ms',
                       onChanged: (v) =>
                           provider.updateSidewaysThresholdTime(v.round()),
+                      colorScheme: colorScheme,
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 5),
                     _buildSlider(
                       title: 'Sideways Acceleration Threshold',
                       value: provider.settings.sidewaysAccelThreshold,
@@ -184,6 +318,8 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
                       divisions: 12,
                       suffix: 'g',
                       onChanged: (v) => provider.updateSidewaysAccelThreshold(v),
+                      decimals: 2,
+                      colorScheme: colorScheme,
                     ),
                   ],
                 ),
@@ -252,7 +388,11 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
     required int divisions,
     required String suffix,
     required ValueChanged<double> onChanged,
+    int decimals = 0,
+    required ColorScheme colorScheme,
   }) {
+    final displayValue = value.clamp(min, max);
+
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -266,23 +406,25 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
                 style: const TextStyle(fontWeight: FontWeight.w500),
               ),
               Text(
-                suffix.isNotEmpty
-                    ? '${value.toStringAsFixed(0)} $suffix'
-                    : value.toStringAsFixed(0),
+                suffix.isNotEmpty ? '${displayValue.toStringAsFixed(decimals)} $suffix' : displayValue.toStringAsFixed(decimals),
                 style: TextStyle(
-                  color: Theme.of(context).colorScheme.primary,
+                  color: colorScheme.primary,
                   fontWeight: FontWeight.bold,
                 ),
               ),
             ],
           ),
-          Slider(
-            value: value.clamp(min, max),
-            min: min,
-            max: max,
-            divisions: divisions,
-            onChanged: onChanged,
-          ),
+          Builder(builder: (context) {
+            Gradient gradient = LinearGradient(colors: [colorScheme.secondary, colorScheme.primary]);
+
+            return ColorBarSlider(
+              value: displayValue,
+              min: min,
+              max: max,
+              gradient: gradient,
+              onChanged: onChanged,
+            );
+          }),
         ],
       ),
     );
@@ -315,6 +457,7 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
     BuildContext context,
     SettingsProvider provider,
     int color,
+    ColorScheme colorScheme,
   ) {
     return SingleChildScrollView(
       child: Column(
@@ -331,8 +474,8 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
             min: -100,
             max: 100,
             gradient: frontlightValue >= 0
-              ? LinearGradient(colors: [Colors.green, Colors.lightGreen])
-              : LinearGradient(colors: [Colors.orange, Colors.red]),
+                ? LinearGradient(colors: [colorScheme.primaryContainer, colorScheme.primary])
+                : LinearGradient(colors: [colorScheme.secondary, colorScheme.primary]),
             onChanged: (val) {
               setState(() {
                 frontlightValue = val;
@@ -361,7 +504,7 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
             min: 0,
             max: 100,
             gradient: LinearGradient(
-              colors: [Colors.blue, Colors.cyan],
+              colors: [colorScheme.primary, colorScheme.secondary],
             ),
             onChanged: (val) {
               setState(() {
@@ -482,7 +625,7 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
           ),
           FilledButton(
             onPressed: () {
-              provider.updateColor(pickedColor.value);
+              provider.updateColor(pickedColor.toARGB32());
               Navigator.pop(context);
             },
             child: const Text('Select'),
@@ -500,7 +643,7 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
           style: TextStyle(fontWeight: FontWeight.w500),
         ),
         const SizedBox(height: 12),
-        GPlot(gx: gx, gy: gy),
+        GPlot(gx: 0.0, gy: 0.0, valueListenable: _gNotifier),
       ],
     );
   }

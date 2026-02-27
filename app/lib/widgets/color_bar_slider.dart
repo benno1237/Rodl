@@ -8,6 +8,7 @@ class ColorBarSlider extends StatelessWidget {
   final ValueChanged<double> onChanged;
   final double cornerRadius = 10;
   final double height = 32;
+  final double borderWidth = 2;
 
   const ColorBarSlider({
     super.key,
@@ -30,11 +31,11 @@ class ColorBarSlider extends StatelessWidget {
       child: Container(
         height: height,
         decoration: BoxDecoration(
-          border: Border.all(color: Colors.black, width: 2),
+          border: Border.all(color: Colors.black, width: borderWidth),
           borderRadius: BorderRadius.circular(cornerRadius),
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(cornerRadius - 2), // inner rounding
+          borderRadius: BorderRadius.circular(cornerRadius - borderWidth), // inner rounding
           child: LayoutBuilder(
             builder: (context, constraints) {
               final width = constraints.maxWidth;

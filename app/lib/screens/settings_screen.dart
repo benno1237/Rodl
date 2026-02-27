@@ -229,7 +229,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           FilledButton(
             onPressed: () {
-              provider.updateColor(pickedColor.value);
+              provider.updateColor(pickedColor.toARGB32());
               Navigator.pop(context);
             },
             child: const Text('Select'),
@@ -307,7 +307,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<int>(
-              value: currentEffect,
+              initialValue: currentEffect,
               decoration: InputDecoration(
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
