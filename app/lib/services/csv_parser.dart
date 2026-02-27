@@ -1,7 +1,63 @@
 import 'dart:math';
 import 'package:csv/csv.dart';
+import 'package:flutter/foundation.dart';
 import '../models/gps_point.dart';
 import '../models/ride.dart';
+
+/// Helper used by `compute` to parse CSV in a background isolate.
+Map<String, dynamic> _parseRideEntry(Map args) {
+  final int rideId = args['rideId'] as int;
+  final String csvContent = args['csv'] as String;
+
+  final List<List<dynamic>> rows = const CsvToListConverter().convert(csvContent);
+
+  if (rows.isEmpty) {
+    return {
+      'rideId': rideId,
+      'points': [],
+      'startTimeMillis': DateTime.now().millisecondsSinceEpoch,
+    };
+  }
+
+  final List<Map<String, dynamic>> points = [];
+  final bool hasHeader = rows[0][0] == 'timestamp';
+
+  for (int i = hasHeader ? 1 : 0; i < rows.length; i++) {
+    final row = rows[i];
+    if (row.length < 8) continue;
+
+    final timestamp = int.tryParse(row[0].toString()) ?? 0;
+    final lat = double.tryParse(row[1].toString()) ?? 0.0;
+    final lon = double.tryParse(row[2].toString()) ?? 0.0;
+    final speed = double.tryParse(row[3].toString()) ?? 0.0;
+    final alt = double.tryParse(row[4].toString()) ?? 0.0;
+    final sats = int.tryParse(row[5].toString()) ?? 0;
+    final hdop = double.tryParse(row[6].toString()) ?? 99.9;
+    final age = int.tryParse(row[7].toString()) ?? 0;
+
+    points.add({
+      'timestamp': timestamp,
+      'lat': lat,
+      'lon': lon,
+      'speedKmh': speed,
+      'altM': alt,
+      'sats': sats,
+      'hdop': hdop,
+      'age': age,
+      'acceleration': 0.5 + Random(timestamp).nextDouble() * 1.0,
+    });
+  }
+
+  final startTimeMillis = points.isNotEmpty
+      ? DateTime.now().subtract(Duration(milliseconds: points.last['timestamp'] as int)).millisecondsSinceEpoch
+      : DateTime.now().millisecondsSinceEpoch;
+
+  return {
+    'rideId': rideId,
+    'points': points,
+    'startTimeMillis': startTimeMillis,
+  };
+}
 
 class CsvParser {
   static Ride parseRide(int rideId, String csvContent) {
@@ -51,27 +107,38 @@ class CsvParser {
     return Ride(id: rideId, points: points, startTime: startTime);
   }
 
+  /// Async parsing that runs in a background isolate and reconstructs the Ride.
+  static Future<Ride> parseRideAsync(int rideId, String csvContent) async {
+    final Map<String, dynamic> result = await compute(_parseRideEntry, {
+      'rideId': rideId,
+      'csv': csvContent,
+    });
+
+    final List<dynamic> pointsData = result['points'] as List<dynamic>? ?? [];
+    final List<GPSPoint> points = pointsData.map((p) {
+      return GPSPoint(
+        timestamp: p['timestamp'] as int,
+        lat: (p['lat'] as num).toDouble(),
+        lon: (p['lon'] as num).toDouble(),
+        speedKmh: (p['speedKmh'] as num).toDouble(),
+        altM: (p['altM'] as num).toDouble(),
+        sats: p['sats'] as int,
+        hdop: (p['hdop'] as num).toDouble(),
+        age: p['age'] as int,
+        acceleration: (p['acceleration'] as num).toDouble(),
+      );
+    }).toList();
+
+    final startTimeMillis = result['startTimeMillis'] as int?;
+    final startTime = startTimeMillis != null
+        ? DateTime.fromMillisecondsSinceEpoch(startTimeMillis)
+        : DateTime.now();
+
+    return Ride(id: rideId, points: points, startTime: startTime);
+  }
+
   static double _mockAcceleration(int timestamp) {
     final random = Random(timestamp);
     return 0.5 + random.nextDouble() * 1.0;
-  }
-
-  static String rideToCsv(Ride ride) {
-    final List<List<dynamic>> rows = [
-      ['timestamp', 'lat', 'lon', 'speed_kmh', 'alt_m', 'sats', 'hdop', 'age'],
-      ...ride.points.map(
-        (p) => [
-          p.timestamp,
-          p.lat.toStringAsFixed(7),
-          p.lon.toStringAsFixed(7),
-          p.speedKmh.toStringAsFixed(1),
-          p.altM.toStringAsFixed(1),
-          p.sats,
-          p.hdop.toStringAsFixed(1),
-          p.age,
-        ],
-      ),
-    ];
-    return const ListToCsvConverter().convert(rows);
   }
 }

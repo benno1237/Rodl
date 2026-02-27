@@ -31,8 +31,8 @@ class RidesProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void addRideFromCsv(String csvContent) {
-    final ride = CsvParser.parseRide(_rides.length, csvContent);
+  Future<void> addRideFromCsv(String csvContent) async {
+    final ride = await CsvParser.parseRideAsync(_rides.length, csvContent);
     _rides.add(ride);
     notifyListeners();
   }
