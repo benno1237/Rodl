@@ -4,11 +4,13 @@ import '../models/sled.dart';
 class SledCard extends StatelessWidget {
   final Sled sled;
   final VoidCallback onTap;
+  final VoidCallback? onFavoriteToggle;
 
   const SledCard({
     super.key,
     required this.sled,
     required this.onTap,
+    this.onFavoriteToggle,
   });
 
   @override
@@ -48,9 +50,19 @@ class SledCard extends StatelessWidget {
                 ),
               ),
 
-              const Padding(
-                padding: EdgeInsets.only(right: 16),
-                child: Icon(Icons.arrow_forward),
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                    icon: Icon(
+                      sled.isFavorite ? Icons.star : Icons.star_border,
+                      color: sled.isFavorite
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context).iconTheme.color,
+                    ),
+                    onPressed: onFavoriteToggle,
+                  ),
+                ],
               ),
             ],
           ),

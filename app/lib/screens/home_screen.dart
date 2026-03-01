@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import '../models/sled.dart';
 import '../providers/rides_provider.dart';
@@ -22,6 +23,7 @@ class _HomeScreenState extends State<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<RidesProvider>().loadMockData();
     });
+    _loadFavorites();
   }
 
   double gx = 0.0;
@@ -33,6 +35,35 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _selectedIndex = index;
     });
+  }
+
+  final Set<String> _favoriteIds = {};
+
+  Future<void> _loadFavorites() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final favs = prefs.getStringList('favorite_sleds') ?? <String>[];
+      setState(() {
+        _favoriteIds.clear();
+        _favoriteIds.addAll(favs);
+      });
+    } catch (e, st) {
+      // If platform channel isn't ready or another error occurs, log and continue with empty favorites
+      // ignore: avoid_print
+      print('Failed to load favorites: $e\n$st');
+    }
+  }
+
+  Future<void> _toggleFavorite(String sledId) async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      if (_favoriteIds.contains(sledId)) {
+        _favoriteIds.remove(sledId);
+      } else {
+        _favoriteIds.add(sledId);
+      }
+    });
+    await prefs.setStringList('favorite_sleds', _favoriteIds.toList());
   }
 
   @override
@@ -92,7 +123,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildRodls() {
-    final List<Sled> sleds = [
+    final baseSleds = [
       Sled(
         id: "SLED-001",
         name: "Red Lightning",
@@ -109,6 +140,19 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     ];
 
+    final sleds = baseSleds
+        .map((s) => Sled(
+              id: s.id,
+              name: s.name,
+              imagePath: s.imagePath,
+              primaryColor: s.primaryColor,
+              secondaryColor: s.secondaryColor,
+              isFavorite: _favoriteIds.contains(s.id),
+            ))
+        .toList();
+
+    sleds.sort((a, b) => (b.isFavorite ? 1 : 0) - (a.isFavorite ? 1 : 0));
+
     return Scaffold(
       body: Column(
         children: [
@@ -122,11 +166,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) =>
-                            SledDetailScreen(sled: sleds[index]),
+                        builder: (_) => SledDetailScreen(sled: sleds[index]),
                       ),
                     );
                   },
+                  onFavoriteToggle: () => _toggleFavorite(sleds[index].id),
                 );
               },
             ),

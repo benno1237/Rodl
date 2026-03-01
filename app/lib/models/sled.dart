@@ -6,6 +6,7 @@ class Sled {
   final String imagePath;
   final Color primaryColor;
   final Color secondaryColor;
+  final bool isFavorite;
 
   Sled({
     required this.id,
@@ -13,5 +14,6 @@ class Sled {
     required this.imagePath,
     required this.primaryColor,
     required this.secondaryColor,
+    this.isFavorite = false,
   });
 }
