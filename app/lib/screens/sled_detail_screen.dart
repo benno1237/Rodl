@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/sled.dart';
 import '../widgets/g_plot.dart';
 import '../widgets/color_bar_slider.dart';
+import '../widgets/split_color_bar_slider.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:provider/provider.dart';
 import '../providers/settings_provider.dart';
@@ -44,6 +45,8 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
       _selectedIndex = index;
     });
   }
+
+  // removed _buildSplitColorBar helper — building split cbar inline for full control
 
   @override
   void initState() {
@@ -278,65 +281,68 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
           ),
           const SizedBox(height: 24),
           _buildSectionHeader('Advanced Settings'),
-              const SizedBox(height: 12),
-              Card(
-                elevation: 2,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+          const SizedBox(height: 12),
+          Card(
+            elevation: 2,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSlider(
+                  title: 'Long Press Duration',
+                  value: provider.settings.longPressDuration.toDouble(),
+                  min: 500,
+                  max: 3000,
+                  divisions: 25,
+                  suffix: 'ms',
+                  onChanged: (v) => provider.updateLongPressDuration(v.round()),
+                  colorScheme: colorScheme,
+                  parentTheme: Theme.of(context),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildSlider(
-                      title: 'Long Press Duration',
-                      value: provider.settings.longPressDuration.toDouble(),
-                      min: 500,
-                      max: 3000,
-                      divisions: 25,
-                      suffix: 'ms',
-                      onChanged: (v) => provider.updateLongPressDuration(v.round()),
-                      colorScheme: colorScheme,
-                    ),
-                    const SizedBox(height: 5),
-                    _buildSlider(
-                      title: 'Sideways Threshold Time',
-                      value: provider.settings.sidewaysThresholdTime.toDouble(),
-                      min: 500,
-                      max: 3000,
-                      divisions: 25,
-                      suffix: 'ms',
-                      onChanged: (v) =>
-                          provider.updateSidewaysThresholdTime(v.round()),
-                      colorScheme: colorScheme,
-                    ),
-                    const SizedBox(height: 5),
-                    _buildSlider(
-                      title: 'Sideways Acceleration Threshold',
-                      value: provider.settings.sidewaysAccelThreshold,
-                      min: 0.3,
-                      max: 1.5,
-                      divisions: 12,
-                      suffix: 'g',
-                      onChanged: (v) => provider.updateSidewaysAccelThreshold(v),
-                      decimals: 2,
-                      colorScheme: colorScheme,
-                    ),
-                  ],
+                const SizedBox(height: 5),
+                _buildSlider(
+                  title: 'Sideways Threshold Time',
+                  value: provider.settings.sidewaysThresholdTime.toDouble(),
+                  min: 500,
+                  max: 3000,
+                  divisions: 25,
+                  suffix: 'ms',
+                  onChanged: (v) =>
+                      provider.updateSidewaysThresholdTime(v.round()),
+                  colorScheme: colorScheme,
+                  parentTheme: Theme.of(context),
                 ),
-              ),
-              const SizedBox(height: 16),
-              _buildSwitchTile(
-                title: 'Auto Shutdown',
-                subtitle: 'Automatically shut down if the sledge is sideways',
-                value: provider.settings.accelAutoShutdown,
-                onChanged: provider.updateAccelAutoShutdown,
-              ),
-              _buildSwitchTile(
-                title: 'Auto Startup',
-                subtitle: 'Automatically start back up when upright',
-                value: provider.settings.accelAutoStartup,
-                onChanged: provider.updateAccelAutoStartup,
-              ),
+                const SizedBox(height: 5),
+                _buildSlider(
+                  title: 'Sideways Acceleration Threshold',
+                  value: provider.settings.sidewaysAccelThreshold,
+                  min: 0.3,
+                  max: 1.5,
+                  divisions: 12,
+                  suffix: 'g',
+                  onChanged: (v) => provider.updateSidewaysAccelThreshold(v),
+                  decimals: 2,
+                  colorScheme: colorScheme,
+                  parentTheme: Theme.of(context),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _buildSwitchTile(
+            title: 'Auto Shutdown',
+            subtitle: 'Automatically shut down if the sledge is sideways',
+            value: provider.settings.accelAutoShutdown,
+            onChanged: provider.updateAccelAutoShutdown,
+          ),
+          _buildSwitchTile(
+            title: 'Auto Startup',
+            subtitle: 'Automatically start back up when upright',
+            value: provider.settings.accelAutoStartup,
+            onChanged: provider.updateAccelAutoStartup,
+          ),
         ],
       ),
     );
@@ -390,6 +396,7 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
     required ValueChanged<double> onChanged,
     int decimals = 0,
     required ColorScheme colorScheme,
+    required ThemeData parentTheme,
   }) {
     final displayValue = value.clamp(min, max);
 
@@ -405,11 +412,22 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
                 title,
                 style: const TextStyle(fontWeight: FontWeight.w500),
               ),
-              Text(
-                suffix.isNotEmpty ? '${displayValue.toStringAsFixed(decimals)} $suffix' : displayValue.toStringAsFixed(decimals),
-                style: TextStyle(
-                  color: colorScheme.primary,
-                  fontWeight: FontWeight.bold,
+              InkWell(
+                onTap: () => _showSliderDialog(
+                  title: title,
+                  value: displayValue,
+                  min: min,
+                  max: max,
+                  decimals: decimals,
+                  onChanged: onChanged,
+                  parentTheme: parentTheme,
+                ),
+                child: Text(
+                  suffix.isNotEmpty ? '${displayValue.toStringAsFixed(decimals)} $suffix' : displayValue.toStringAsFixed(decimals),
+                  style: TextStyle(
+                    color: colorScheme.primary,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],
@@ -427,6 +445,59 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
           }),
         ],
       ),
+    );
+  }
+
+  void _showSliderDialog({
+    required String title,
+    required double value,
+    required double min,
+    required double max,
+    required int decimals,
+    required ValueChanged<double> onChanged,
+    ThemeData? parentTheme,
+  }) {
+    final controller = TextEditingController(text: value.toStringAsFixed(decimals));
+
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        final dialogTheme = parentTheme ?? Theme.of(context);
+        return Theme(
+          data: dialogTheme,
+          child: AlertDialog(
+          title: Text('Set $title'),
+          content: TextField(
+            controller: controller,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+            autofocus: true,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final raw = controller.text.replaceAll(',', '.').trim();
+                final parsed = double.tryParse(raw);
+                if (parsed == null) {
+                  Navigator.of(context).pop();
+                  return;
+                }
+                final clamped = parsed.clamp(min, max).toDouble();
+                onChanged(clamped);
+                Navigator.of(context).pop();
+              },
+              child: const Text('Set'),
+            ),
+          ],
+          ),
+        );
+      },
     );
   }
 
@@ -465,22 +536,93 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
         children: [
 
           /// FRONTLIGHT SECTION
-          Text("Frontlight", style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 16),
+          _buildSectionHeader('Frontlight'),
+          // const SizedBox(height: 5),
 
-          Text("Brightness / Mode"),
-          ColorBarSlider(
-            value: frontlightValue,
-            min: -100,
-            max: 100,
-            gradient: frontlightValue >= 0
-                ? LinearGradient(colors: [colorScheme.primaryContainer, colorScheme.primary])
-                : LinearGradient(colors: [colorScheme.secondary, colorScheme.primary]),
-            onChanged: (val) {
-              setState(() {
-                frontlightValue = val;
-              });
-            },
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Left mode value (Mode 1) - fixed width and tappable
+                    InkWell(
+                      onTap: () => _showSliderDialog(
+                        title: 'Brightness / Mode',
+                        value: frontlightValue,
+                        min: -100,
+                        max: 100,
+                        decimals: 0,
+                        onChanged: (v) => setState(() => frontlightValue = v),
+                        parentTheme: Theme.of(context),
+                      ),
+                      child: SizedBox(
+                        width: 72,
+                        child: Center(
+                          child: Text(
+                            frontlightValue < 0 ? '${frontlightValue.abs().toStringAsFixed(0)} %' : '0 %',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: frontlightValue < 0 ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurfaceVariant,
+                              fontWeight: frontlightValue < 0 ? FontWeight.bold : FontWeight.normal,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    // Centered title (takes remaining space)
+                    Expanded(
+                      child: Center(
+                        child: Text(
+                          'Brightness',
+                          style: const TextStyle(fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                    ),
+
+                    // Right mode value (Mode 2) - fixed width and tappable
+                    InkWell(
+                      onTap: () => _showSliderDialog(
+                        title: 'Brightness / Mode',
+                        value: frontlightValue,
+                        min: -100,
+                        max: 100,
+                        decimals: 0,
+                        onChanged: (v) => setState(() => frontlightValue = v),
+                        parentTheme: Theme.of(context),
+                      ),
+                      child: SizedBox(
+                        width: 72,
+                        child: Center(
+                          child: Text(
+                            frontlightValue > 0 ? '${frontlightValue.toStringAsFixed(0)} %' : '0 %',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: frontlightValue > 0 ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurfaceVariant,
+                              fontWeight: frontlightValue > 0 ? FontWeight.bold : FontWeight.normal,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                SplitColorBarSlider(
+                  value: frontlightValue,
+                  min: -100,
+                  max: 100,
+                  gradient: frontlightValue >= 0
+                      ? LinearGradient(colors: [colorScheme.primaryContainer, colorScheme.primary])
+                      : LinearGradient(colors: [colorScheme.secondary, colorScheme.primary]),
+                  showZeroMarker: true,
+                  onChanged: (val) => setState(() => frontlightValue = val),
+                ),
+              ],
+            ),
           ),
 
           Row(
@@ -495,24 +637,35 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
           const SizedBox(height: 40),
 
           /// RGB STRIP SECTION
-          Text("RGB Strip", style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 16),
+          _buildSectionHeader('RGB Strip'),
+          // const SizedBox(height: 5),
 
-          Text("Brightness"),
-          ColorBarSlider(
-            value: stripBrightness,
+          _buildSlider(
+            title: 'Brightness',
+            value: provider.settings.brightness.toDouble(),
             min: 0,
             max: 100,
-            gradient: LinearGradient(
-              colors: [colorScheme.primary, colorScheme.secondary],
-            ),
-            onChanged: (val) {
-              setState(() {
-                stripBrightness = val;
-              });
-            },
+            divisions: 100,
+            suffix: '%',
+            onChanged: (v) =>
+                provider.updateBrightness(v.round()),
+            colorScheme: colorScheme,
+            parentTheme: Theme.of(context),
           ),
 
+          _buildSlider(
+            title: 'Effect Speed',
+            value: provider.settings.effectSpeed.toDouble(),
+            min: 0,
+            max: 100,
+            divisions: 100,
+            suffix: '%',
+            onChanged: (v) =>
+                provider.updateEffectSpeed(v.round()),
+            colorScheme: colorScheme,
+            parentTheme: Theme.of(context),
+          ),
+          
           const SizedBox(height: 16),
 
           Text("Effect"),
