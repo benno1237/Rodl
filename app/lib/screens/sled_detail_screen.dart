@@ -4,7 +4,7 @@ import '../models/sled.dart';
 import '../widgets/g_plot.dart';
 import '../widgets/color_bar_slider.dart';
 import '../widgets/split_color_bar_slider.dart';
-import 'package:flutter_colorpicker/flutter_colorpicker.dart';
+import '../widgets/color_wheel.dart';
 import 'package:provider/provider.dart';
 import '../providers/settings_provider.dart';
 
@@ -759,32 +759,42 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
     int currentColor,
   ) {
     Color pickedColor = Color(currentColor);
-    showDialog(
+    showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Pick a color'),
-        content: SingleChildScrollView(
-          child: ColorPicker(
-            pickerColor: pickedColor,
-            onColorChanged: (c) => pickedColor = c,
-            enableAlpha: false,
-            labelTypes: const [],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              provider.updateColor(pickedColor.toARGB32());
-              Navigator.pop(context);
-            },
-            child: const Text('Select'),
-          ),
-        ],
-      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Pick a color'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ColorWheel(
+                      initialColor: pickedColor,
+                      onChanged: (c) => setState(() => pickedColor = c),
+                      size: 260,
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    provider.updateColor(pickedColor.toARGB32());
+                    Navigator.pop(context);
+                  },
+                  child: const Text('Select'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
