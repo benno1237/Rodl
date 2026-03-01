@@ -51,6 +51,9 @@
 	<true/>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
+	<!-- Location permission description for geolocator -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>App requires location access to show your current GPS position.</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
 	<key>UISupportedInterfaceOrientations</key>

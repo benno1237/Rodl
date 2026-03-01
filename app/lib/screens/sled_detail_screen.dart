@@ -7,6 +7,7 @@ import '../widgets/split_color_bar_slider.dart';
 import '../widgets/color_wheel.dart';
 import '../widgets/effect_border.dart';
 import 'package:provider/provider.dart';
+import 'package:geolocator/geolocator.dart';
 import '../providers/settings_provider.dart';
 import '../models/settings.dart';
 
@@ -37,6 +38,10 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
 
   // Frontlight
   double frontlightValue = 0; // -100 to +100
+
+  // GPS
+  late final TextEditingController _gpsController;
+  StreamSubscription<Position>? _positionSub;
 
   // RGB strip
   double stripBrightness = 50;
@@ -70,12 +75,18 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
     }).listen((value) {
       _gNotifier.value = Offset(value.$1, value.$2);
     });
+
+    // GPS controller and stream
+    _gpsController = TextEditingController(text: 'Initializing GPS...');
+    _initGps();
   }
 
   @override
   void dispose() {
     _gSub?.cancel();
     _gNotifier.dispose();
+    _positionSub?.cancel();
+    _gpsController.dispose();
     // previously disposed glow controller; nothing to dispose here
     super.dispose();
   }
@@ -900,6 +911,27 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
   Widget _buildSensorGraphs() {
     return Column(
       children: [
+        Card(
+          elevation: 2,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('GPS Info', style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _gpsController,
+                  readOnly: true,
+                  maxLines: 5,
+                  decoration: const InputDecoration(border: OutlineInputBorder()),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
         const Text(
           "Live Acceleration (G-Plot)",
           style: TextStyle(fontWeight: FontWeight.w500),
@@ -908,6 +940,56 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
         GPlot(gx: 0.0, gy: 0.0, valueListenable: _gNotifier),
       ],
     );
+  }
+
+  Future<void> _initGps() async {
+    try {
+      _gpsController.text = 'Checking location services...';
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        _gpsController.text = 'Location services are disabled.';
+        return;
+      }
+
+      _gpsController.text = 'Checking permissions...';
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        _gpsController.text = 'Requesting location permission...';
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          _gpsController.text = 'Location permissions are denied.';
+          return;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        _gpsController.text = 'Location permissions are permanently denied.';
+        return;
+      }
+
+      _gpsController.text = 'Fetching current location...';
+      final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.best);
+      _gpsController.text = _formatPosition(pos);
+
+      _gpsController.text = 'Subscribing to location updates...';
+      _positionSub = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.best, distanceFilter: 1),
+      ).listen((p) {
+        _gpsController.text = _formatPosition(p);
+      }, onError: (e) {
+        _gpsController.text = 'GPS stream error: $e';
+      });
+    } catch (e, st) {
+      _gpsController.text = 'GPS error: $e';
+      // also log to console for more context when running
+      // ignore: avoid_print
+      print('GPS init error: $e\n$st');
+    }
+  }
+
+  String _formatPosition(Position p) {
+    final time = p.timestamp?.toIso8601String() ?? '-';
+    return 'Lat: ${p.latitude.toStringAsFixed(6)}\nLng: ${p.longitude.toStringAsFixed(6)}\nAlt: ${p.altitude.toStringAsFixed(2)} m\nSpeed: ${p.speed.toStringAsFixed(2)} m/s\nTime: $time';
   }
 
 }

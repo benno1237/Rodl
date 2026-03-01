@@ -33,7 +33,7 @@ class Settings {
   Settings({
     this.color = 0xFF7530AA,
     this.brightness = 150,
-    this.effect = 'strobe',
+    this.effect = 'rainbow_wipe',
     this.effectSpeed = 500,
     this.longPressDuration = 1500,
     this.sidewaysThresholdTime = 1000,
