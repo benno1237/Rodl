@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import '../providers/settings_provider.dart';
+import '../models/settings.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -47,7 +48,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: (v) => provider.updateBrightness(v.round()),
               ),
               const SizedBox(height: 16),
-              _buildEffectDropdown(context, provider, settings.effect),
+              _buildEffectDropdown(context, provider, settings),
               const SizedBox(height: 16),
               _buildSliderTile(
                 title: 'Effect Speed',
@@ -290,9 +291,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildEffectDropdown(
     BuildContext context,
     SettingsProvider provider,
-    int currentEffect,
+    Settings settings,
   ) {
-    final effects = List.generate(16, (i) => 'Effect ${i + 1}');
+    final names = Settings.effectNames;
+    final display = Settings.effectDisplayNames;
+    final currentName = settings.effect;
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -306,8 +309,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: TextStyle(fontWeight: FontWeight.w500),
             ),
             const SizedBox(height: 12),
-            DropdownButtonFormField<int>(
-              initialValue: currentEffect,
+            DropdownButtonFormField<String>(
+              initialValue: currentName,
               decoration: InputDecoration(
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -317,8 +320,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   vertical: 12,
                 ),
               ),
-              items: effects.asMap().entries.map((e) {
-                return DropdownMenuItem(value: e.key, child: Text(e.value));
+              items: names.asMap().entries.map((e) {
+                return DropdownMenuItem(value: e.value, child: Text(display[e.key]));
               }).toList(),
               onChanged: (v) {
                 if (v != null) provider.updateEffect(v);

@@ -51,8 +51,16 @@ class SettingsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void updateEffect(int effect) {
-    _settings = _settings.copyWith(effect: effect);
+  /// Update the current effect by canonical name (UI uses names).
+  ///
+  /// This stores the internal index in `Settings` for persistence/UI, and
+  /// sends a copy to the backend with the `externalId` for the effect.
+  void updateEffect(String effectName) {
+    // Store the canonical name for UI/persistence.
+    _settings = _settings.copyWith(effect: effectName);
+
+    // Sending to backend: `Settings.toBytes()` will translate the stored
+    // name into the correct external ID, so send the settings directly.
     _bleService.sendSettings(_settings);
     notifyListeners();
   }

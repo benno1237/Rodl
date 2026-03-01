@@ -5,8 +5,10 @@ import '../widgets/g_plot.dart';
 import '../widgets/color_bar_slider.dart';
 import '../widgets/split_color_bar_slider.dart';
 import '../widgets/color_wheel.dart';
+import '../widgets/effect_border.dart';
 import 'package:provider/provider.dart';
 import '../providers/settings_provider.dart';
+import '../models/settings.dart';
 
 class SledDetailScreen extends StatefulWidget {
   final Sled sled;
@@ -17,12 +19,13 @@ class SledDetailScreen extends StatefulWidget {
   State<SledDetailScreen> createState() => _SledDetailScreenState();
 }
 
-class _SledDetailScreenState extends State<SledDetailScreen> {
+class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerProviderStateMixin {
   double gx = 0.0;
   double gy = 0.0;
 
   late final ValueNotifier<Offset> _gNotifier;
   StreamSubscription? _gSub;
+  // Glow controller removed — per-effect animations live in `EffectBorder`.
 
   @override
   void setState(VoidCallback fn) {
@@ -37,7 +40,7 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
 
   // RGB strip
   double stripBrightness = 50;
-  String selectedEffect = "Static";
+  // Selected effect is stored in settings (int). UI will read from provider.
   Color selectedColor = Colors.blue;
 
   void _onItemTapped(int index) {
@@ -55,6 +58,8 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
       context.read<SettingsProvider>().connect();
     });
 
+    // Per-effect animations handled by `EffectBorder` widget.
+
     // Simulated live updates (replace later with BLE stream)
     _gNotifier = ValueNotifier(const Offset(0, 0));
     _gSub = Stream.periodic(const Duration(milliseconds: 100), (i) {
@@ -71,6 +76,7 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
   void dispose() {
     _gSub?.cancel();
     _gNotifier.dispose();
+    // previously disposed glow controller; nothing to dispose here
     super.dispose();
   }
 
@@ -97,7 +103,7 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
       ),
       chipTheme: ChipThemeData(
         backgroundColor: colorScheme.secondaryContainer,
-        disabledColor: colorScheme.onSurface.withOpacity(0.12),
+        disabledColor: colorScheme.onSurface.withAlpha((0.12 * 255).round()),
         selectedColor: colorScheme.primary,
         secondarySelectedColor: colorScheme.primaryContainer,
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -122,7 +128,7 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
         backgroundColor: colorScheme.surface,
         selectedItemColor: colorScheme.primary,
-        unselectedItemColor: colorScheme.onSurface.withOpacity(0.6),
+        unselectedItemColor: colorScheme.onSurface.withAlpha((0.6 * 255).round()),
       ),
     );
 
@@ -237,7 +243,7 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
                               child: LinearProgressIndicator(
                                 value: 0.8,
                                 minHeight: 6,
-                                backgroundColor: Theme.of(context).colorScheme.onSurface.withOpacity(0.06),
+                                  backgroundColor: Theme.of(context).colorScheme.onSurface.withAlpha((0.06 * 255).round()),
                               ),
                             ),
                             const SizedBox(height: 12),
@@ -447,6 +453,7 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
       ),
     );
   }
+
 
   void _showSliderDialog({
     required String title,
@@ -668,32 +675,11 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
           
           const SizedBox(height: 16),
 
-          Text("Effect"),
-          DropdownButton<String>(
-            value: selectedEffect,
-            isExpanded: true,
-            items: [
-              "Static",
-              "Breathing",
-              "Rainbow",
-              "Police",
-              "Strobe"
-            ].map((effect) {
-              return DropdownMenuItem(
-                value: effect,
-                child: Text(effect),
-              );
-            }).toList(),
-            onChanged: (value) {
-              setState(() {
-                selectedEffect = value!;
-              });
-            },
-          ),
+          _buildEffectCard(context, provider),
 
           const SizedBox(height: 24),
 
-          _buildColorWheel(context, provider, color),
+          _buildColorWheel(context, provider),
         ],
       ),
     );
@@ -702,7 +688,6 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
   Widget _buildColorWheel(
     BuildContext context,
     SettingsProvider provider,
-    int color,
   ) {
     return Card(
       elevation: 2,
@@ -720,12 +705,12 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
             Row(
               children: [
                 GestureDetector(
-                  onTap: () => _showColorPicker(context, provider, color),
+                  onTap: () => _showColorPicker(context, provider),
                   child: Container(
                     width: 48,
                     height: 48,
                     decoration: BoxDecoration(
-                      color: Color(color),
+                      color: Color(provider.settings.color),
                       shape: BoxShape.circle,
                       border: Border.all(color: Colors.white, width: 2),
                       boxShadow: [
@@ -741,7 +726,7 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () => _showColorPicker(context, provider, color),
+                    onPressed: () => _showColorPicker(context, provider),
                     child: const Text('Change Color'),
                   ),
                 ),
@@ -756,9 +741,8 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
   void _showColorPicker(
     BuildContext context,
     SettingsProvider provider,
-    int currentColor,
   ) {
-    Color pickedColor = Color(currentColor);
+    Color pickedColor = Color(provider.settings.color);
     showDialog<void>(
       context: context,
       builder: (context) {
@@ -786,6 +770,121 @@ class _SledDetailScreenState extends State<SledDetailScreen> {
                 FilledButton(
                   onPressed: () {
                     provider.updateColor(pickedColor.toARGB32());
+                    Navigator.pop(context);
+                  },
+                  child: const Text('Select'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildEffectCard(BuildContext context, SettingsProvider provider) {
+    final currentEffectName = provider.settings.effect;
+    final currentName = Settings.effects[currentEffectName]?.displayName ?? currentEffectName;
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Effect', style: TextStyle(fontWeight: FontWeight.w500)),
+            const SizedBox(height: 12),
+            EffectBorder(
+              effectName: currentEffectName,
+              selected: true,
+              baseColor: Color(provider.settings.color),
+              segments: 80,
+              height: 44,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => _showEffectPicker(context, provider, currentEffectName),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                    child: Text(currentName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showEffectPicker(BuildContext context, SettingsProvider provider, String currentEffectName) {
+    final names = Settings.effectNames;
+    final display = Settings.effectDisplayNames;
+
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        int selectedIdx = names.indexOf(currentEffectName);
+        if (selectedIdx < 0) selectedIdx = 0;
+
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Pick an effect'),
+              content: SizedBox(
+                width: 360,
+                height: 320,
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: names.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
+                  itemBuilder: (context, idx) {
+                    final name = names[idx];
+                    final label = display[idx];
+                    final selected = idx == selectedIdx;
+
+                    return EffectBorder(
+                      effectName: name,
+                      selected: selected,
+                      baseColor: Color(provider.settings.color),
+                      segments: 80,
+                      height: 44,
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () => setState(() => selectedIdx = idx),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                                child: Text(
+                                label,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.black,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    provider.updateEffect(names[selectedIdx]);
                     Navigator.pop(context);
                   },
                   child: const Text('Select'),
