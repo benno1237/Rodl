@@ -10,6 +10,9 @@ import 'package:provider/provider.dart';
 import 'package:geolocator/geolocator.dart';
 import '../providers/settings_provider.dart';
 import '../models/settings.dart';
+import '../models/gps_point.dart';
+import '../providers/rides_provider.dart';
+import '../models/ride.dart';
 
 class SledDetailScreen extends StatefulWidget {
   final Sled sled;
@@ -42,6 +45,10 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
   // GPS
   late final TextEditingController _gpsController;
   StreamSubscription<Position>? _positionSub;
+  // Recording
+  bool _isRecording = false;
+  final List<GPSPoint> _recordedPoints = [];
+  StreamSubscription<Position>? _recordingSub;
 
   // RGB strip
   double stripBrightness = 50;
@@ -86,6 +93,7 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
     _gSub?.cancel();
     _gNotifier.dispose();
     _positionSub?.cancel();
+    _recordingSub?.cancel();
     _gpsController.dispose();
     // previously disposed glow controller; nothing to dispose here
     super.dispose();
@@ -931,6 +939,27 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
             ),
           ),
         ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: ElevatedButton.icon(
+                icon: Icon(_isRecording ? Icons.stop : Icons.play_arrow),
+                label: Text(_isRecording ? 'Stop & Save' : 'Start Recording'),
+                onPressed: () => _toggleRecording(),
+              ),
+            ),
+            const SizedBox(width: 8),
+            ElevatedButton(
+              onPressed: () {
+                // quick clear recorded points
+                _recordedPoints.clear();
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Recorded buffer cleared')));
+              },
+              child: const Text('Clear'),
+            ),
+          ],
+        ),
         const SizedBox(height: 12),
         const Text(
           "Live Acceleration (G-Plot)",
@@ -940,6 +969,59 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
         GPlot(gx: 0.0, gy: 0.0, valueListenable: _gNotifier),
       ],
     );
+  }
+
+  void _toggleRecording() async {
+    if (_isRecording) {
+      // stop
+      final ridesProv = context.read<RidesProvider>();
+      if (_recordingSub != null) await _recordingSub!.cancel();
+      _recordingSub = null;
+      setState(() => _isRecording = false);
+
+      if (!mounted) return;
+
+      if (_recordedPoints.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No GPS points recorded')));
+        return;
+      }
+
+      final startTs = _recordedPoints.first.timestamp;
+      final ride = Ride(id: ridesProv.rides.length, points: List<GPSPoint>.from(_recordedPoints), startTime: DateTime.fromMillisecondsSinceEpoch(startTs));
+      await ridesProv.addRide(ride);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ride saved')));
+      _recordedPoints.clear();
+    } else {
+      // start
+      _recordedPoints.clear();
+      setState(() => _isRecording = true);
+
+      try {
+        _recordingSub = Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(accuracy: LocationAccuracy.best, distanceFilter: 1),
+        ).listen((p) {
+          final ts = p.timestamp.millisecondsSinceEpoch;
+          final point = GPSPoint(
+            timestamp: ts,
+            lat: p.latitude,
+            lon: p.longitude,
+            speedKmh: p.speed * 3.6,
+            altM: p.altitude,
+            sats: 0,
+            hdop: p.accuracy,
+            age: 0,
+          );
+          _recordedPoints.add(point);
+          _gpsController.text = _formatPosition(p);
+        }, onError: (e) {
+          _gpsController.text = 'Recording stream error: $e';
+        });
+      } catch (e) {
+        setState(() => _isRecording = false);
+        _gpsController.text = 'Failed to start recording: $e';
+      }
+    }
   }
 
   Future<void> _initGps() async {
@@ -968,7 +1050,9 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
       }
 
       _gpsController.text = 'Fetching current location...';
-      final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.best);
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.best),
+      );
       _gpsController.text = _formatPosition(pos);
 
       _gpsController.text = 'Subscribing to location updates...';
@@ -988,7 +1072,7 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
   }
 
   String _formatPosition(Position p) {
-    final time = p.timestamp?.toIso8601String() ?? '-';
+    final time = p.timestamp.toIso8601String();
     return 'Lat: ${p.latitude.toStringAsFixed(6)}\nLng: ${p.longitude.toStringAsFixed(6)}\nAlt: ${p.altitude.toStringAsFixed(2)} m\nSpeed: ${p.speed.toStringAsFixed(2)} m/s\nTime: $time';
   }
 

@@ -44,4 +44,31 @@ class GPSPoint {
       acceleration: acceleration ?? this.acceleration,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'timestamp': timestamp,
+        'lat': lat,
+        'lon': lon,
+        'speedKmh': speedKmh,
+        'altM': altM,
+        'sats': sats,
+        'hdop': hdop,
+        'age': age,
+        'acceleration': acceleration,
+      };
+
+  factory GPSPoint.fromJson(Map<String, dynamic> json) {
+    return GPSPoint(
+      timestamp: json['timestamp'] as int,
+      lat: (json['lat'] as num).toDouble(),
+      lon: (json['lon'] as num).toDouble(),
+      speedKmh: (json['speedKmh'] as num).toDouble(),
+      altM: (json['altM'] as num).toDouble(),
+      sats: json['sats'] as int,
+      hdop: (json['hdop'] as num).toDouble(),
+      age: json['age'] as int,
+      acceleration: (json['acceleration'] as num).toDouble(),
+    );
+  }
+
 }

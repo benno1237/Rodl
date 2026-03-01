@@ -6,8 +6,9 @@ class Ride {
   final int id;
   final List<GPSPoint> points;
   final DateTime startTime;
+  final String? name;
 
-  Ride({required this.id, required this.points, required this.startTime});
+  Ride({required this.id, required this.points, required this.startTime, this.name});
 
   DateTime get date => DateTime(startTime.year, startTime.month, startTime.day);
 
@@ -74,4 +75,22 @@ class Ride {
   }
 
   double _toRadians(double degrees) => degrees * pi / 180;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'startTime': startTime.millisecondsSinceEpoch,
+        'points': points.map((p) => p.toJson()).toList(),
+        'name': name,
+      };
+
+  factory Ride.fromJson(Map<String, dynamic> json) {
+    final pts =
+        (json['points'] as List).map((e) => GPSPoint.fromJson(Map<String, dynamic>.from(e))).toList();
+    return Ride(
+      id: json['id'] as int,
+      points: pts,
+      startTime: DateTime.fromMillisecondsSinceEpoch(json['startTime'] as int),
+      name: json['name'] as String?,
+    );
+  }
 }

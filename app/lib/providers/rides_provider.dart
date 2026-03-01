@@ -1,5 +1,7 @@
 import 'dart:math';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/ride.dart';
 import '../models/gps_point.dart';
 import '../services/csv_parser.dart';
@@ -26,6 +28,13 @@ class RidesProvider extends ChangeNotifier {
     return _rides.where((r) => r.date == targetDate).toList();
   }
 
+  static const String _prefsKey = 'saved_rides_v1';
+
+  RidesProvider() {
+    // load persisted rides
+    Future.microtask(() => _loadFromPrefs());
+  }
+
   void loadMockData() {
     _rides = _generateMockRides();
     notifyListeners();
@@ -34,7 +43,30 @@ class RidesProvider extends ChangeNotifier {
   Future<void> addRideFromCsv(String csvContent) async {
     final ride = await CsvParser.parseRideAsync(_rides.length, csvContent);
     _rides.add(ride);
+    await _saveToPrefs();
     notifyListeners();
+  }
+
+  Future<void> addRide(Ride ride) async {
+    _rides.add(ride);
+    await _saveToPrefs();
+    notifyListeners();
+  }
+
+  Future<void> deleteRide(int id) async {
+    _rides.removeWhere((r) => r.id == id);
+    await _saveToPrefs();
+    notifyListeners();
+  }
+
+  Future<void> renameRide(int id, String newName) async {
+    final idx = _rides.indexWhere((r) => r.id == id);
+    if (idx >= 0) {
+      final r = _rides[idx];
+      _rides[idx] = Ride(id: r.id, points: r.points, startTime: r.startTime, name: newName);
+      await _saveToPrefs();
+      notifyListeners();
+    }
   }
 
   List<Ride> _generateMockRides() {
@@ -109,5 +141,29 @@ class RidesProvider extends ChangeNotifier {
     }
 
     return points;
+  }
+
+  Future<void> _saveToPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = _rides.map((r) => r.toJson()).toList();
+      final encoded = jsonEncode(list);
+      await prefs.setString(_prefsKey, encoded);
+    } catch (e) {
+      if (kDebugMode) print('Failed to save rides: $e');
+    }
+  }
+
+  Future<void> _loadFromPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_prefsKey);
+      if (raw == null || raw.isEmpty) return;
+      final data = jsonDecode(raw) as List;
+      _rides = data.map((e) => Ride.fromJson(Map<String, dynamic>.from(e))).toList();
+      notifyListeners();
+    } catch (e) {
+      if (kDebugMode) print('Failed to load rides: $e');
+    }
   }
 }

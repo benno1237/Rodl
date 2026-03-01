@@ -21,7 +21,14 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<RidesProvider>().loadMockData();
+      // Capture provider synchronously to avoid using BuildContext across
+      // the async delay, then use the captured reference inside the delay.
+      final ridesProv = context.read<RidesProvider>();
+      Future.delayed(const Duration(milliseconds: 200), () {
+        if (ridesProv.rides.isEmpty) {
+          ridesProv.loadMockData();
+        }
+      });
     });
     _loadFavorites();
   }
