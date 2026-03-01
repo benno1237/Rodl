@@ -67,7 +67,7 @@ class _GPlotState extends State<GPlot> {
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.4),
+              color: Colors.black.withAlpha((0.4 * 255).round()),
               blurRadius: 10,
               offset: const Offset(0, 6),
             )

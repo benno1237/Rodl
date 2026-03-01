@@ -6,12 +6,7 @@ class ColorWheel extends StatefulWidget {
   final ValueChanged<Color> onChanged;
   final double size;
 
-  const ColorWheel({
-    Key? key,
-    required this.initialColor,
-    required this.onChanged,
-    this.size = 260,
-  }) : super(key: key);
+  const ColorWheel({super.key, required this.initialColor, required this.onChanged, this.size = 260});
 
   @override
   State<ColorWheel> createState() => _ColorWheelState();
@@ -147,7 +142,7 @@ class _ColorWheelState extends State<ColorWheel> {
                 height: innerR * 2,
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Theme.of(context).dialogBackgroundColor,
+                    color: Theme.of(context).dialogTheme.backgroundColor ?? Theme.of(context).colorScheme.surface,
                     shape: BoxShape.circle,
                   ),
                   child: Center(
@@ -175,7 +170,7 @@ class _ColorWheelState extends State<ColorWheel> {
                               style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
                             ),
                             Text(
-                              '#${combinedColor.toColor().value.toRadixString(16).padLeft(8, '0').toUpperCase()}',
+                              '#${combinedColor.toColor().toARGB32().toRadixString(16).padLeft(8, '0').toUpperCase()}',
                               style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
                             ),
                             Container(
@@ -199,7 +194,7 @@ class _ColorWheelState extends State<ColorWheel> {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: RadialGradient(
-                      colors: [Colors.transparent, Colors.black.withOpacity(0.06)],
+                      colors: [Colors.transparent, Colors.black.withAlpha((0.06 * 255).round())],
                       stops: const [0.9, 1.0],
                     ),
                   ),
