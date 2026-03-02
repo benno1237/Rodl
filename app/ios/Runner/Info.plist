@@ -54,6 +54,13 @@
 	<!-- Location permission description for geolocator -->
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>App requires location access to show your current GPS position.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>App requires background location access to record rides while the app is in the background.</string>
+	<!-- Enable background location updates -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
 	<key>UISupportedInterfaceOrientations</key>
