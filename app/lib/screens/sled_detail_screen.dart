@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '../models/sled.dart';
 import '../widgets/g_plot.dart';
 import '../widgets/color_bar_slider.dart';
@@ -13,6 +14,7 @@ import '../models/settings.dart';
 import '../models/gps_point.dart';
 import '../providers/rides_provider.dart';
 import '../models/ride.dart';
+import '../services/foreground_location_service.dart' as fg_service;
 
 class SledDetailScreen extends StatefulWidget {
   final Sled sled;
@@ -974,7 +976,14 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
   void _toggleRecording() async {
     if (_isRecording) {
       // stop
+      // Capture objects that depend on BuildContext before any awaits.
       final ridesProv = context.read<RidesProvider>();
+      final messenger = ScaffoldMessenger.of(context);
+
+      // Stop background service if running
+      try {
+        await fg_service.stopForegroundRecording();
+      } catch (_) {}
       if (_recordingSub != null) await _recordingSub!.cancel();
       _recordingSub = null;
       setState(() => _isRecording = false);
@@ -982,8 +991,16 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
       if (!mounted) return;
 
       if (_recordedPoints.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No GPS points recorded')));
-        return;
+        // If foreground service recorded points, try loading them
+        final bgPoints = await fg_service.loadBackgroundRecordedPoints();
+        if (bgPoints.isNotEmpty) {
+          _recordedPoints.addAll(bgPoints);
+        }
+
+        if (_recordedPoints.isEmpty) {
+          messenger.showSnackBar(const SnackBar(content: Text('No GPS points recorded')));
+          return;
+        }
       }
 
       final startTs = _recordedPoints.first.timestamp;
@@ -998,6 +1015,39 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
       setState(() => _isRecording = true);
 
       try {
+        // Ensure background permission before starting native foreground service.
+        bool canBg = false;
+        try {
+          canBg = await _ensureBackgroundPermission();
+        } catch (_) {
+          canBg = false;
+        }
+
+        if (canBg) {
+          try {
+            await fg_service.startForegroundRecording(title: 'Rodl recording', text: 'Recording ride');
+          } catch (e) {
+            if (kDebugMode) print('Could not start foreground service: $e');
+          }
+        } else {
+          // Ask the user to open app settings to grant background location.
+          final open = await showDialog<bool>(
+            context: context,
+            builder: (dctx) => AlertDialog(
+              title: const Text('Background location required'),
+              content: const Text('To continue recording while the app is in the background, please grant "Always allow" location permission in app settings.'),
+              actions: [
+                TextButton(onPressed: () => Navigator.of(dctx).pop(false), child: const Text('Cancel')),
+                TextButton(onPressed: () => Navigator.of(dctx).pop(true), child: const Text('Open settings')),
+              ],
+            ),
+          );
+          if (open == true) {
+            await Geolocator.openAppSettings();
+          }
+          if (kDebugMode) print('Background permission not granted - native service skipped');
+        }
+
         _recordingSub = Geolocator.getPositionStream(
           locationSettings: const LocationSettings(accuracy: LocationAccuracy.best, distanceFilter: 1),
         ).listen((p) {
@@ -1068,6 +1118,37 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
       // also log to console for more context when running
       // ignore: avoid_print
       print('GPS init error: $e\n$st');
+    }
+  }
+
+  Future<bool> _ensureBackgroundPermission() async {
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        _gpsController.text = 'Location services are disabled.';
+        return false;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        _gpsController.text = 'Location permissions are permanently denied.';
+        return false;
+      }
+
+      if (permission == LocationPermission.whileInUse) {
+        // Attempt to request 'always' permission; on some devices this will
+        // still require the user to grant it manually in app settings.
+        permission = await Geolocator.requestPermission();
+      }
+
+      return permission == LocationPermission.always;
+    } catch (e) {
+      _gpsController.text = 'Permission check failed: $e';
+      return false;
     }
   }
 
