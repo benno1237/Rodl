@@ -956,7 +956,7 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
               onPressed: () {
                 // quick clear recorded points
                 _recordedPoints.clear();
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Recorded buffer cleared')));
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Recorded buffer cleared'), duration: Duration(seconds: 2)));
               },
               child: const Text('Clear'),
             ),
@@ -997,8 +997,8 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
           _recordedPoints.addAll(bgPoints);
         }
 
-        if (_recordedPoints.isEmpty) {
-          messenger.showSnackBar(const SnackBar(content: Text('No GPS points recorded')));
+          if (_recordedPoints.isEmpty) {
+          messenger.showSnackBar(SnackBar(content: Text('No GPS points recorded'), duration: Duration(milliseconds: 1500)));
           return;
         }
       }
@@ -1007,7 +1007,7 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
       final ride = Ride(id: ridesProv.rides.length, points: List<GPSPoint>.from(_recordedPoints), startTime: DateTime.fromMillisecondsSinceEpoch(startTs));
       await ridesProv.addRide(ride);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ride saved')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ride saved'), duration: Duration(milliseconds: 1500)));
       _recordedPoints.clear();
     } else {
       // start
@@ -1031,6 +1031,7 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
           }
         } else {
           // Ask the user to open app settings to grant background location.
+          if (!mounted) return;
           final open = await showDialog<bool>(
             context: context,
             builder: (dctx) => AlertDialog(

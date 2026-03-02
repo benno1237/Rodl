@@ -202,7 +202,7 @@ class _DayDetailScreenState extends State<DayDetailScreen> {
                                           if (!mounted) return;
                                           if (confirmed == true) {
                                             ridesProv.deleteRide(ride.id);
-                                            messenger.showSnackBar(const SnackBar(content: Text('Ride deleted')));
+                                            messenger.showSnackBar(SnackBar(content: Text('Ride deleted'), duration: Duration(milliseconds: 1500)));
                                           }
                                           setState(() => _revealedRideId = null);
                                         },
@@ -243,7 +243,7 @@ class _DayDetailScreenState extends State<DayDetailScreen> {
                                           if (result != null && result.isNotEmpty) {
                                             await ridesProv.renameRide(ride.id, result);
                                             if (!mounted) return;
-                                            messenger.showSnackBar(const SnackBar(content: Text('Ride renamed')));
+                                            messenger.showSnackBar(SnackBar(content: Text('Ride renamed'), duration: Duration(seconds: 2)));
                                           }
                                           setState(() => _revealedRideId = null);
                                         },
