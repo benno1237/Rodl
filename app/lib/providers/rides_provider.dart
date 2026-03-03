@@ -63,7 +63,7 @@ class RidesProvider extends ChangeNotifier {
     final idx = _rides.indexWhere((r) => r.id == id);
     if (idx >= 0) {
       final r = _rides[idx];
-      _rides[idx] = Ride(id: r.id, points: r.points, startTime: r.startTime, name: newName);
+      _rides[idx] = Ride(id: r.id, points: r.points, startTime: r.startTime, name: newName, sledId: r.sledId);
       await _saveToPrefs();
       notifyListeners();
     }
@@ -97,7 +97,9 @@ class RidesProvider extends ChangeNotifier {
           random,
         );
 
-        rides.add(Ride(id: rides.length, points: points, startTime: rideStart));
+        // Assign a mock sled id for demo data (alternating)
+        final mockSledId = (rides.length % 2 == 0) ? 'SLED-001' : 'SLED-002';
+        rides.add(Ride(id: rides.length, points: points, startTime: rideStart, sledId: mockSledId));
       }
     }
 

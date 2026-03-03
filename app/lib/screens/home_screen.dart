@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import '../models/sled.dart';
+import '../data/sleds.dart';
 import '../providers/rides_provider.dart';
 import '../widgets/sled_card.dart';
 import 'day_detail_screen.dart';
@@ -130,23 +131,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildRodls() {
-    final baseSleds = [
-      Sled(
-        id: "SLED-001",
-        name: "Red Lightning",
-        imagePath: "assets/images/Rodel_rot.png",
-        primaryColor: const Color(0xFFE53935),
-        secondaryColor: const Color(0xFFFFCDD2),
-      ),
-      Sled(
-        id: "SLED-002",
-        name: "Blue Thunder",
-        imagePath: "assets/images/Rodel_blau.png",
-        primaryColor: const Color(0xFF1E88E5),
-        secondaryColor: const Color(0xFFBBDEFB),
-      ),
-    ];
-
     final sleds = baseSleds
         .map((s) => Sled(
               id: s.id,

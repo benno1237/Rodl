@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 // flutter_slidable no longer used in this file (in-card actions implemented).
 import 'package:intl/intl.dart';
 import '../providers/rides_provider.dart';
+import '../data/sleds.dart';
 import 'ride_detail_screen.dart';
 
 class DayDetailScreen extends StatefulWidget {
@@ -51,6 +52,8 @@ class _DayDetailScreenState extends State<DayDetailScreen> {
     _dragDx = 0.0;
   }
 
+  
+
   @override
   Widget build(BuildContext context) {
     final rides = context.watch<RidesProvider>().getRidesForDay(widget.date);
@@ -95,7 +98,7 @@ class _DayDetailScreenState extends State<DayDetailScreen> {
           final ride = rides[index];
           final startTime = DateFormat('HH:mm').format(ride.startTime);
 
-          return Padding(
+            return Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: GestureDetector(
               onHorizontalDragStart: (_) => _onDragStart(),
@@ -127,7 +130,7 @@ class _DayDetailScreenState extends State<DayDetailScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
+                                Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Row(
@@ -149,6 +152,24 @@ class _DayDetailScreenState extends State<DayDetailScreen> {
                                 ),
                               ],
                             ),
+                            const SizedBox(height: 6),
+                            // Show sled used for this ride if available
+                            if (ride.sledId != null)
+                              Builder(builder: (ctx) {
+                                final sled = sledsById[ride.sledId];
+                                final color = sled?.primaryColor ?? Theme.of(ctx).colorScheme.outline;
+                                final label = sled?.name ?? 'Unknown sled';
+                                return Row(
+                                  children: [
+                                    Icon(Icons.two_wheeler, size: 14, color: color),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      label,
+                                      style: Theme.of(ctx).textTheme.bodySmall?.copyWith(color: color),
+                                    ),
+                                  ],
+                                );
+                              }),
                             const SizedBox(height: 12),
                             Row(
                               children: [

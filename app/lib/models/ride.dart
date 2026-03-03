@@ -7,8 +7,9 @@ class Ride {
   final List<GPSPoint> points;
   final DateTime startTime;
   final String? name;
+  final String? sledId;
 
-  Ride({required this.id, required this.points, required this.startTime, this.name});
+  Ride({required this.id, required this.points, required this.startTime, this.name, this.sledId});
 
   DateTime get date => DateTime(startTime.year, startTime.month, startTime.day);
 
@@ -81,6 +82,7 @@ class Ride {
         'startTime': startTime.millisecondsSinceEpoch,
         'points': points.map((p) => p.toJson()).toList(),
         'name': name,
+        'sledId': sledId,
       };
 
   factory Ride.fromJson(Map<String, dynamic> json) {
@@ -91,6 +93,7 @@ class Ride {
       points: pts,
       startTime: DateTime.fromMillisecondsSinceEpoch(json['startTime'] as int),
       name: json['name'] as String?,
+      sledId: json.containsKey('sledId') ? (json['sledId'] as String?) : null,
     );
   }
 }

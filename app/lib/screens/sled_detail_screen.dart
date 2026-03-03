@@ -1004,7 +1004,12 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
       }
 
       final startTs = _recordedPoints.first.timestamp;
-      final ride = Ride(id: ridesProv.rides.length, points: List<GPSPoint>.from(_recordedPoints), startTime: DateTime.fromMillisecondsSinceEpoch(startTs));
+      final ride = Ride(
+        id: ridesProv.rides.length,
+        points: List<GPSPoint>.from(_recordedPoints),
+        startTime: DateTime.fromMillisecondsSinceEpoch(startTs),
+        sledId: widget.sled.id,
+      );
       await ridesProv.addRide(ride);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ride saved'), duration: Duration(milliseconds: 1500)));
