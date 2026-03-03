@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'services/tile_cache.dart';
 import 'providers/rides_provider.dart';
 import 'providers/settings_provider.dart';
 import 'screens/home_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const RodlApp());
+  CachedNetworkTileProvider.init().then((_) {
+    runApp(const RodlApp());
+  });
 }
 
 class RodlApp extends StatelessWidget {

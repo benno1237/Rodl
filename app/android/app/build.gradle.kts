@@ -5,6 +5,44 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Pre-build hook to zip tiles directory using a Gradle Zip task (cross-platform)
+import org.gradle.api.tasks.bundling.Zip
+
+val zipTiles = tasks.register<Zip>("zipTiles") {
+    // compute the Flutter project root (android/app -> ../..)
+    val projectRoot = project.projectDir.parentFile.parentFile
+    val tilesDir = File(projectRoot, "assets/tiles")
+    val imagesDir = File(projectRoot, "assets/images")
+
+    // Only run when a tiles folder exists
+    onlyIf {
+        tilesDir.exists() && tilesDir.isDirectory
+    }
+
+    doFirst {
+        println("Zipping assets/tiles from $tilesDir into $imagesDir/tiles.zip")
+        imagesDir.mkdirs()
+    }
+
+    // Put entries under assets/tiles/... inside the archive
+    from(tilesDir) {
+        into("assets/tiles")
+    }
+
+    archiveFileName.set("tiles.zip")
+    destinationDirectory.set(imagesDir)
+}
+
+tasks.named("preBuild") {
+    dependsOn(zipTiles)
+}
+
+// Ensure the Flutter compile task explicitly depends on our zip task so Gradle
+// doesn't complain about an implicit dependency on the produced tiles.zip.
+tasks.matching { it.name == "compileFlutterBuildRelease" }.configureEach {
+    dependsOn(zipTiles)
+}
+
 android {
     namespace = "com.example.rodl"
     compileSdk = flutter.compileSdkVersion

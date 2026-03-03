@@ -1,5 +1,5 @@
 import 'dart:math';
-import 'package:csv/csv.dart';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../models/gps_point.dart';
 import '../models/ride.dart';
@@ -9,7 +9,7 @@ Map<String, dynamic> _parseRideEntry(Map args) {
   final int rideId = args['rideId'] as int;
   final String csvContent = args['csv'] as String;
 
-  final List<List<dynamic>> rows = const CsvToListConverter().convert(csvContent);
+  final List<List<dynamic>> rows = _simpleCsvToRows(csvContent);
 
   if (rows.isEmpty) {
     return {
@@ -59,11 +59,19 @@ Map<String, dynamic> _parseRideEntry(Map args) {
   };
 }
 
+List<List<dynamic>> _simpleCsvToRows(String csvContent) {
+  final lines = const LineSplitter().convert(csvContent);
+  final rows = <List<dynamic>>[];
+  for (final line in lines) {
+    if (line.trim().isEmpty) continue;
+    rows.add(line.split(',').map((s) => s.trim()).toList());
+  }
+  return rows;
+}
+
 class CsvParser {
   static Ride parseRide(int rideId, String csvContent) {
-    final List<List<dynamic>> rows = const CsvToListConverter().convert(
-      csvContent,
-    );
+    final List<List<dynamic>> rows = _simpleCsvToRows(csvContent);
 
     if (rows.isEmpty) {
       return Ride(id: rideId, points: [], startTime: DateTime.now());

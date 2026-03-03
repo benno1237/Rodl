@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import '../services/tile_cache.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:intl/intl.dart';
 import '../models/ride.dart';
@@ -54,6 +55,7 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
                     urlTemplate:
                         'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                     userAgentPackageName: 'com.rodl.app',
+                    tileProvider: CachedNetworkTileProvider(),
                   ),
                   PolylineLayer(
                     polylines: [
