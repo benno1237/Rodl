@@ -284,7 +284,6 @@ fp-info-cache
 *.net
 *.dsn
 *.ses
-*.xml
 *.cmp
 *.csv
 
