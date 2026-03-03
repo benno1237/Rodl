@@ -1,10 +1,5 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
-import 'package:archive/archive.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as p;
 import '../models/settings.dart';
 import '../services/ble_service.dart';
 
@@ -35,61 +30,16 @@ class SettingsProvider extends ChangeNotifier {
     notifyListeners();
 
     if (region == null) return;
-
-    try {
-      final data = await rootBundle.load('assets/images/tiles.zip');
-      final bytes = data.buffer.asUint8List();
-      final archive = ZipDecoder().decodeBytes(bytes);
-      final dir = await getApplicationSupportDirectory();
-      for (final file in archive) {
-        if (!file.isFile) continue;
-        final name = file.name; // e.g. assets/tiles/<region>/<z>/<x>/<y.png>
-        if (!name.startsWith('assets/tiles/$region/')) continue;
-        final parts = name.split('/');
-        if (parts.length < 6) continue;
-        final z = parts[3];
-        final x = parts[4];
-        final y = parts[5];
-        final outPath = p.join(dir.path, 'map_tiles', z, x);
-        final outFile = File(p.join(outPath, y));
-        await Directory(outPath).create(recursive: true);
-        await outFile.writeAsBytes(file.content as List<int>);
-      }
-    } catch (_) {
-      // ignore errors — extraction is best-effort
-    }
   }
 
   /// Extract only tiles for [region] at [zoom] into the app support `map_tiles`
   /// directory for a quick preview. This is best-effort and will overwrite any
   /// existing preview tiles.
   Future<void> previewExtractTiles(String region, int zoom) async {
-    try {
-      final data = await rootBundle.load('assets/images/tiles.zip');
-      final bytes = data.buffer.asUint8List();
-      final archive = ZipDecoder().decodeBytes(bytes);
-      final dir = await getApplicationSupportDirectory();
-      int extracted = 0;
-      for (final file in archive) {
-        if (!file.isFile) continue;
-        final name = file.name; // e.g. assets/tiles/<region>/<z>/<x>/<y.png>
-        if (!name.startsWith('assets/tiles/$region/')) continue;
-        final parts = name.split('/');
-        if (parts.length < 6) continue;
-        final z = int.tryParse(parts[3]);
-        if (z != zoom) continue;
-        final x = parts[4];
-        final y = parts[5];
-        final outPath = p.join(dir.path, 'map_tiles', '$z', x);
-        final outFile = File(p.join(outPath, y));
-        await Directory(outPath).create(recursive: true);
-        await outFile.writeAsBytes(file.content as List<int>);
-        extracted++;
-        if (extracted >= 200) break; // limit extraction for preview
-      }
-    } catch (_) {
-      // ignore errors — preview extraction is optional
-    }
+    // No-op: preview uses network tiles; keep method for compatibility.
+    // ignore: avoid_print
+    print('previewExtractTiles: no-op (using network tiles) for $region at $zoom');
+    return;
   }
 
   Future<void> connect() async {
