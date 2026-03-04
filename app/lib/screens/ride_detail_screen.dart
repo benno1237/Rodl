@@ -47,7 +47,7 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
                   initialCenter: center,
                   initialZoom: 14,
                   interactionOptions: const InteractionOptions(
-                    flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+                    flags: InteractiveFlag.all,
                   ),
                 ),
                 children: [

@@ -148,7 +148,7 @@ class _TrackCardState extends State<TrackCard> {
                             initialCenter: LatLng(_points.first.lat, _points.first.lon),
                             initialZoom: 13.0,
                             interactionOptions: const InteractionOptions(
-                              flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
+                              flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag | InteractiveFlag.rotate,
                             ),
                           ),
                           children: [
@@ -170,6 +170,7 @@ class _TrackCardState extends State<TrackCard> {
                           ],
                         )),
             ),
+            // (leaderboard moved to track detail screen)
             // show details button and best time only when expanded
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),

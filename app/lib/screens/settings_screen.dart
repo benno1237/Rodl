@@ -343,7 +343,7 @@ class _TilePreviewCardState extends State<_TilePreviewCard> {
                         initialCenter: _previewCenter as LatLng,
                         initialZoom: 14.0,
                         interactionOptions: const InteractionOptions(
-                          flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+                          flags: InteractiveFlag.all,
                         ),
                       ),
                       children: [

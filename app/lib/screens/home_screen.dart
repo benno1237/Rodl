@@ -100,15 +100,15 @@ class _HomeScreenState extends State<HomeScreen> {
         onTap: _onItemTapped,
         items: const [
           BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard),
+            icon: Icon(Icons.sledding),
             label: "Rodls",
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.lightbulb),
+            icon: Icon(Icons.landscape),
             label: "Rides",
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.sensors),
+            icon: Icon(Icons.gesture),
             label: "Tracks",
           ),
         ],
