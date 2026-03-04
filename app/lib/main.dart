@@ -5,11 +5,13 @@ import 'providers/rides_provider.dart';
 import 'providers/settings_provider.dart';
 import 'screens/home_screen.dart';
 import 'data/sleds.dart';
+import 'data/tracks.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await CachedNetworkTileProvider.init();
   await initSleds();
+  await initTracks();
   runApp(const RodlApp());
 }
 

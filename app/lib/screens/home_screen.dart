@@ -4,6 +4,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import '../models/sled.dart';
 import '../data/sleds.dart';
+import '../data/tracks.dart';
+import '../widgets/track_card.dart';
+import 'track_detail_screen.dart';
 import '../providers/rides_provider.dart';
 import '../widgets/sled_card.dart';
 import 'day_detail_screen.dart';
@@ -124,10 +127,38 @@ class _HomeScreenState extends State<HomeScreen> {
       case 1:
         return _buildRides();
       case 2:
-        return const Center(child: Text("Sensors coming soon"));
+        return _buildTracks();
       default:
         return const SizedBox();
     }
+  }
+
+  Widget _buildTracks() {
+    final tracks = baseTracks;
+
+    return Scaffold(
+      body: Column(
+        children: [
+          Expanded(
+            child: ListView.builder(
+              itemCount: tracks.length,
+              itemBuilder: (context, index) {
+                final t = tracks[index];
+                return TrackCard(
+                  track: t,
+                  onDetails: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => TrackDetailScreen(track: t)),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildRodls() {

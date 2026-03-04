@@ -1,0 +1,29 @@
+[
+  {
+    "id": "TRACK-001",
+    "name": "Berger Alm",
+    "gpxPath": "assets/tracks/berger_alm.gpx",
+    "sections": [
+      { "id": "T1-S1", "name": "Upper Section", "startIndex": 0, "endIndex": 120 },
+      { "id": "T1-S2", "name": "Lower Section", "startIndex": 121, "endIndex": 260 }
+    ]
+  },
+  {
+    "id": "TRACK-002",
+    "name": "Elfer",
+    "gpxPath": "assets/tracks/elfer.gpx",
+    "sections": []
+  },
+  {
+    "id": "TRACK-003",
+    "name": "Glungezer",
+    "gpxPath": "assets/tracks/glungezer.gpx",
+    "sections": []
+  },
+  {
+    "id": "TRACK-004",
+    "name": "Rangger Köpfl",
+    "gpxPath": "assets/tracks/rangger_koepfl.gpx",
+    "sections": []
+  }
+]
