@@ -1,0 +1,18 @@
+[
+  {
+    "id": "SLED-001",
+    "name": "Red Lightning",
+    "imagePath": "assets/images/Rodel_rot.png",
+    "primaryColor": "#FFE53935",
+    "secondaryColor": "#FFFFCDD2",
+    "isFavorite": false
+  },
+  {
+    "id": "SLED-002",
+    "name": "Blue Thunder",
+    "imagePath": "assets/images/Rodel_blau.png",
+    "primaryColor": "#FF1E88E5",
+    "secondaryColor": "#FFBBDEFB",
+    "isFavorite": false
+  }
+]

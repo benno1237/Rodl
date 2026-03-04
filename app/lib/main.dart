@@ -4,12 +4,13 @@ import 'services/tile_cache.dart';
 import 'providers/rides_provider.dart';
 import 'providers/settings_provider.dart';
 import 'screens/home_screen.dart';
+import 'data/sleds.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  CachedNetworkTileProvider.init().then((_) {
-    runApp(const RodlApp());
-  });
+  await CachedNetworkTileProvider.init();
+  await initSleds();
+  runApp(const RodlApp());
 }
 
 class RodlApp extends StatelessWidget {

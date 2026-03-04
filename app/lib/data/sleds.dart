@@ -1,21 +1,29 @@
-import 'package:flutter/material.dart';
+import 'dart:convert';
+
+import 'package:flutter/services.dart';
+
 import '../models/sled.dart';
 
-final List<Sled> baseSleds = [
-  Sled(
-    id: "SLED-001",
-    name: "Red Lightning",
-    imagePath: "assets/images/Rodel_rot.png",
-    primaryColor: const Color(0xFFE53935),
-    secondaryColor: const Color(0xFFFFCDD2),
-  ),
-  Sled(
-    id: "SLED-002",
-    name: "Blue Thunder",
-    imagePath: "assets/images/Rodel_blau.png",
-    primaryColor: const Color(0xFF1E88E5),
-    secondaryColor: const Color(0xFFBBDEFB),
-  ),
-];
+class _SledsStore {
+  static List<Sled> baseSleds = [];
+  static Map<String, Sled> sledsById = {};
 
-final Map<String, Sled> sledsById = {for (var s in baseSleds) s.id: s};
+  static Future<void> init() async {
+    try {
+      final raw = await rootBundle.loadString('assets/data/sleds.json');
+      final list = json.decode(raw) as List<dynamic>;
+      baseSleds = list.map((e) => Sled.fromJson(e as Map<String, dynamic>)).toList();
+      sledsById = {for (var s in baseSleds) s.id: s};
+    } catch (e) {
+      baseSleds = [];
+      sledsById = {};
+    }
+  }
+}
+
+/// Public accessors kept for backward compatibility.
+List<Sled> get baseSleds => _SledsStore.baseSleds;
+Map<String, Sled> get sledsById => _SledsStore.sledsById;
+
+/// Initialize sleds from `assets/data/sleds.json`.
+Future<void> initSleds() => _SledsStore.init();
