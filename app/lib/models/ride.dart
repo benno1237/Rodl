@@ -8,8 +8,9 @@ class Ride {
   final DateTime startTime;
   final String? name;
   final String? sledId;
+  final String? username;
 
-  Ride({required this.id, required this.points, required this.startTime, this.name, this.sledId});
+  Ride({required this.id, required this.points, required this.startTime, this.name, this.sledId, this.username});
 
   DateTime get date => DateTime(startTime.year, startTime.month, startTime.day);
 
@@ -82,7 +83,8 @@ class Ride {
         'startTime': startTime.millisecondsSinceEpoch,
         'points': points.map((p) => p.toJson()).toList(),
         'name': name,
-        'sledId': sledId,
+      'sledId': sledId,
+      'username': username,
       };
 
   factory Ride.fromJson(Map<String, dynamic> json) {
@@ -94,6 +96,7 @@ class Ride {
       startTime: DateTime.fromMillisecondsSinceEpoch(json['startTime'] as int),
       name: json['name'] as String?,
       sledId: json.containsKey('sledId') ? (json['sledId'] as String?) : null,
+      username: json.containsKey('username') ? (json['username'] as String?) : null,
     );
   }
 }

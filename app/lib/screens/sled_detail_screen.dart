@@ -979,6 +979,7 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
       // Capture objects that depend on BuildContext before any awaits.
       final ridesProv = context.read<RidesProvider>();
       final messenger = ScaffoldMessenger.of(context);
+      final capturedUsername = context.read<SettingsProvider>().username;
 
       // Stop background service if running
       try {
@@ -1009,6 +1010,7 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
         points: List<GPSPoint>.from(_recordedPoints),
         startTime: DateTime.fromMillisecondsSinceEpoch(startTs),
         sledId: widget.sled.id,
+        username: capturedUsername,
       );
       await ridesProv.addRide(ride);
       if (!mounted) return;

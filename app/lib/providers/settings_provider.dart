@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/settings.dart';
 import '../services/ble_service.dart';
 
 class SettingsProvider extends ChangeNotifier {
   Settings _settings = Settings();
+  String _username = '';
   final BleService _bleService = BleService();
   StreamSubscription? _bleSubscription;
   bool _isConnected = false;
@@ -14,12 +16,14 @@ class SettingsProvider extends ChangeNotifier {
 
   Settings get settings => _settings;
   bool get isConnected => _isConnected;
+  String get username => _username;
 
   SettingsProvider() {
     _bleSubscription = _bleService.settingsStream.listen((settings) {
       _settings = settings;
       notifyListeners();
     });
+    _loadUsername();
   }
 
   /// Set the selected bundled tile region. If [region] is non-null, extract
@@ -32,22 +36,29 @@ class SettingsProvider extends ChangeNotifier {
     if (region == null) return;
   }
 
-  /// Extract only tiles for [region] at [zoom] into the app support `map_tiles`
-  /// directory for a quick preview. This is best-effort and will overwrite any
-  /// existing preview tiles.
-  Future<void> previewExtractTiles(String region, int zoom) async {
-    // No-op: preview uses network tiles; keep method for compatibility.
-    // ignore: avoid_print
-    print('previewExtractTiles: no-op (using network tiles) for $region at $zoom');
-    return;
-  }
-
   Future<void> connect() async {
     _isConnected = await _bleService.connect();
     notifyListeners();
     if (_isConnected) {
       await _bleService.requestSettings();
     }
+  }
+
+  Future<void> _loadUsername() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _username = prefs.getString('username') ?? '';
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  Future<void> setUsername(String value) async {
+    _username = value;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('username', value);
+    } catch (_) {}
+    notifyListeners();
   }
 
   Future<void> disconnect() async {

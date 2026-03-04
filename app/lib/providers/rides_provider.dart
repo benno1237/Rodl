@@ -63,7 +63,7 @@ class RidesProvider extends ChangeNotifier {
     final idx = _rides.indexWhere((r) => r.id == id);
     if (idx >= 0) {
       final r = _rides[idx];
-      _rides[idx] = Ride(id: r.id, points: r.points, startTime: r.startTime, name: newName, sledId: r.sledId);
+      _rides[idx] = Ride(id: r.id, points: r.points, startTime: r.startTime, name: newName, sledId: r.sledId, username: r.username);
       await _saveToPrefs();
       notifyListeners();
     }

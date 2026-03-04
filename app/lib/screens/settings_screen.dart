@@ -19,12 +19,39 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  late TextEditingController _usernameController;
+
   @override
   void initState() {
     super.initState();
+    _usernameController = TextEditingController();
+    _usernameController.addListener(() {
+      // Update provider as the user types.
+      try {
+        final prov = context.read<SettingsProvider>();
+        prov.setUsername(_usernameController.text);
+      } catch (_) {}
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<SettingsProvider>().connect();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final prov = Provider.of<SettingsProvider>(context);
+    final uname = prov.username;
+    if (uname != _usernameController.text) {
+      _usernameController.text = uname;
+    }
+  }
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    super.dispose();
   }
 
   @override
@@ -39,6 +66,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
             padding: const EdgeInsets.all(16),
             children: [
               _buildConnectionStatus(isConnected),
+              const SizedBox(height: 24),
+              _buildSectionHeader('User Identifier'),
+              const SizedBox(height: 12),
+              Card(
+                elevation: 2,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Username (unique identifier)', style: TextStyle(fontWeight: FontWeight.w500)),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _usernameController,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          labelText: 'Enter username',
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text('This will uniquely identify you in the app.', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    ],
+                  ),
+                ),
+              ),
               const SizedBox(height: 24),
               _buildSectionHeader('Map Tiles Preview'),
               const SizedBox(height: 12),
