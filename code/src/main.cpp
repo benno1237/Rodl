@@ -3,8 +3,7 @@
 #include <Preferences.h> // Include Preferences library for NVS storage
 #include <TinyGPS++.h>   // GPS parsing library
 #include <HardwareSerial.h>
-#include <LittleFS.h>
-#include <FS.h>
+
 
 #define DEBUG
 #define ACC
@@ -46,8 +45,6 @@ uint16_t LED_SPEED = 500;    // LED update speed
 // GPS Settings
 constexpr uint32_t GPS_BAUDRATE = 115200;
 constexpr uint16_t GPS_UPDATE_INTERVAL_MS = 100;  // 10Hz update rate
-constexpr uint16_t MAX_RIDES = 2;
-constexpr uint16_t POINTS_PER_RIDE = 100;  // 10Hz × 600 seconds = 10 minutes (max)
 
 // Constants
 constexpr uint8_t numReadings = 10;                                                  // Amount of pot values to average
@@ -107,14 +104,15 @@ struct GPSPoint {
   uint8_t sats;             // number of satellites
   float hdop;               // horizontal dilution of precision
   uint16_t age;             // sentence age in ms
+  float accel_x;            // accelerometer X
+  float accel_y;            // accelerometer Y
+  float accel_z;            // accelerometer Z
 };
 
 // GPS Variables
 #ifdef GPS
-GPSPoint rideBuffer[MAX_RIDES][POINTS_PER_RIDE];
-uint16_t rideCounts[MAX_RIDES] = {0};
-uint8_t currentRideIndex = 0;
 bool isGPSLogging = false;
+uint8_t currentRideIndex = 0;
 unsigned long lastGPSLogTime = 0;
 unsigned long lastGPSStatsPrint = 0;
 constexpr uint16_t GPS_STATS_PRINT_INTERVAL_MS = 500;
@@ -126,9 +124,11 @@ HardwareSerial gpsSerial(2);  // UART2 for GPS
 #ifdef BLE
 #define BLE_SERVICE_UUID "12345678-1234-1234-1234-123456789abc"
 #define BLE_SETTINGS_UUID "12345678-1234-1234-1234-123456789abd"
+#define BLE_GPS_DATA_UUID "12345678-1234-1234-1234-123456789abe"
 NimBLEServer* pServer = nullptr;
 NimBLEService* pService = nullptr;
 NimBLECharacteristic* pSettingsCharacteristic = nullptr;
+NimBLECharacteristic* pGPSDataCharacteristic = nullptr;
 bool bleConnected = false;
 #endif
 
@@ -157,8 +157,6 @@ void checkOrientation();
 void initGPS();
 void startGPSLogging();
 void stopGPSLogging();
-bool saveRideToFS(uint8_t rideIndex);
-uint8_t getOldestRideIndex();
 void processGPSData();
 #endif
 #ifdef BLE
@@ -167,6 +165,7 @@ void startBLE();
 void stopBLE();
 void applySettings();
 void sendSettingsResponse();
+void sendGPSPoint(const GPSPoint& point, uint8_t rideIndex);
 #endif
 
 void setup()
@@ -248,24 +247,6 @@ void initGPS()
   Serial.println("Initializing GPS...");
 #endif
 
-  // Initialize LittleFS (without auto-format to preserve existing rides)
-  if (!LittleFS.begin(false)) {
-    // Try formatting only if mount fails
-    if (!LittleFS.begin(true)) {
-#ifdef DEBUG
-      Serial.println("LittleFS format failed");
-#endif
-      return;
-    }
-#ifdef DEBUG
-    Serial.println("LittleFS mounted successfully after format");
-#endif
-  } else {
-#ifdef DEBUG
-    Serial.println("LittleFS mounted successfully");
-#endif
-  }
-
   // Initialize GPS serial
   gpsSerial.begin(GPS_BAUDRATE, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
 
@@ -294,16 +275,12 @@ void startGPSLogging()
     return;
   }
 
-  // Get the oldest ride index (circular buffer)
-  currentRideIndex = getOldestRideIndex();
-
-  // Reset buffer for this ride
-  rideCounts[currentRideIndex] = 0;
+  currentRideIndex++;
   isGPSLogging = true;
   lastGPSLogTime = millis();
 
 #ifdef DEBUG
-  Serial.print("Starting GPS logging on ride ");
+  Serial.print("Starting GPS logging, ride ");
   Serial.println(currentRideIndex);
 #endif
 }
@@ -318,106 +295,10 @@ void stopGPSLogging()
   }
 
   isGPSLogging = false;
-
-  // Save the ride to filesystem
-  if (saveRideToFS(currentRideIndex)) {
-#ifdef DEBUG
-    Serial.print("Ride ");
-    Serial.print(currentRideIndex);
-    Serial.println(" saved successfully");
-#endif
-  } else {
-#ifdef DEBUG
-    Serial.println("Failed to save ride");
-#endif
-  }
-}
-
-uint8_t getOldestRideIndex()
-{
-  // Read index from file to determine oldest ride
-  File file = LittleFS.open("/rides/index.txt", "r");
-  if (file && file.available()) {
-    String indexStr = file.readString();
-    file.close();
-    // Validate: index should be a single digit 0-9
-    if (indexStr.length() >= 1) {
-      char c = indexStr.charAt(0);
-      if (c >= '0' && c <= '9') {
-        return c - '0';
-      }
-    }
-  }
-  // Default to 0 if no index file or invalid content
-  return 0;
-}
-
-bool saveRideToFS(uint8_t rideIndex)
-{
-  // Create rides directory if it doesn't exist
-  if (!LittleFS.exists("/rides")) {
-    LittleFS.mkdir("/rides");
-  }
-
-  // Build filename
-  char filename[32];
-  snprintf(filename, sizeof(filename), "/rides/ride_%03d.csv", rideIndex);
-
-  File file = LittleFS.open(filename, "w");
-  if (!file) {
-#ifdef DEBUG
-    Serial.print("Failed to open ");
-    Serial.println(filename);
-#endif
-    return false;
-  }
-
-  // Write CSV header
-  file.println("timestamp,lat,lon,speed_kmh,alt_m,sats,hdop,age");
-
-  // Write data points
-  for (uint16_t i = 0; i < rideCounts[rideIndex]; i++) {
-    GPSPoint p = rideBuffer[rideIndex][i];
-    file.print(p.timestamp);
-    file.print(",");
-    file.print(p.lat, 7);
-    file.print(",");
-    file.print(p.lon, 7);
-    file.print(",");
-    file.print(p.speed_kmh, 1);
-    file.print(",");
-    file.print(p.alt_m, 1);
-    file.print(",");
-    file.print(p.sats);
-    file.print(",");
-    file.print(p.hdop, 1);
-    file.print(",");
-    file.println(p.age);
-  }
-
-  file.close();
-
-  // Update index file with next ride index
-  File indexFile = LittleFS.open("/rides/index.txt", "w");
-  if (indexFile) {
-    uint8_t nextRide = (rideIndex + 1) % MAX_RIDES;
-    indexFile.print(nextRide);
-    indexFile.close();
-  }
-
-#ifdef DEBUG
-  Serial.print("Saved ");
-  Serial.print(rideCounts[rideIndex]);
-  Serial.println(" points to ");
-  Serial.println(filename);
-#endif
-
-  return true;
 }
 
 void processGPSData()
 {
-  // Read all available GPS data (always, even when not logging)
   while (gpsSerial.available()) {
     char c = gpsSerial.read();
     gps.encode(c);
@@ -425,39 +306,37 @@ void processGPSData()
 
   if (!isGPSLogging) return;
 
-  // Check if we have a valid fix and it's time to log
-  // Only log if location is updated AND we have valid data for key fields
   if (gps.location.isUpdated() &&
       gps.location.isValid() &&
       (millis() - lastGPSLogTime >= GPS_UPDATE_INTERVAL_MS)) {
-    uint16_t pos = rideCounts[currentRideIndex];
+    
+    GPSPoint p;
+    p.timestamp = millis();
+    p.lat = gps.location.lat();
+    p.lon = gps.location.lng();
+    p.speed_kmh = gps.speed.isValid() ? gps.speed.kmph() : 0.0;
+    p.alt_m = gps.altitude.isValid() ? gps.altitude.meters() : 0.0;
+    p.sats = gps.satellites.isValid() ? gps.satellites.value() : 0;
+    p.hdop = gps.hdop.isValid() ? gps.hdop.hdop() : 99.9;
+    p.age = gps.location.age();
 
-    if (pos < POINTS_PER_RIDE) {
-      GPSPoint &p = rideBuffer[currentRideIndex][pos];
-
-      p.timestamp = millis();
-      p.lat = gps.location.lat();
-      p.lon = gps.location.lng();
-      // Only use speed if valid, otherwise 0
-      p.speed_kmh = gps.speed.isValid() ? gps.speed.kmph() : 0.0;
-      // Only use altitude if valid, otherwise 0
-      p.alt_m = gps.altitude.isValid() ? gps.altitude.meters() : 0.0;
-      // Only use satellites if valid
-      p.sats = gps.satellites.isValid() ? gps.satellites.value() : 0;
-      // Only use HDOP if valid
-      p.hdop = gps.hdop.isValid() ? gps.hdop.hdop() : 99.9;
-      p.age = gps.location.age();
-
-      rideCounts[currentRideIndex]++;
-      lastGPSLogTime = millis();
-    } else {
-      // Buffer full - stop logging silently
-      // User must manually stop via long press to save current data
-      isGPSLogging = false;
-#ifdef DEBUG
-      Serial.println("GPS buffer full, logging stopped");
+#ifdef ACC
+    p.accel_x = lis.getAccelerationX();
+    p.accel_y = lis.getAccelerationY();
+    p.accel_z = lis.getAccelerationZ();
+#else
+    p.accel_x = 0;
+    p.accel_y = 0;
+    p.accel_z = 0;
 #endif
+
+    lastGPSLogTime = millis();
+
+#ifdef BLE
+    if (bleConnected) {
+      sendGPSPoint(p, currentRideIndex);
     }
+#endif
   }
 }
 
@@ -501,12 +380,7 @@ void printGPSStats()
       Serial.print("--");
     }
     Serial.print(" | Logging: ");
-    Serial.print(isGPSLogging ? "YES" : "NO");
-    Serial.print(" (");
-    Serial.print(rideCounts[currentRideIndex]);
-    Serial.print("/");
-    Serial.print(POINTS_PER_RIDE);
-    Serial.println(")");
+    Serial.println(isGPSLogging ? "YES" : "NO");
   }
 #endif
 }
@@ -801,6 +675,11 @@ void initBLE() {
   );
   pSettingsCharacteristic->setCallbacks(new SettingsCallback());
   
+  pGPSDataCharacteristic = pService->createCharacteristic(
+    BLE_GPS_DATA_UUID,
+    NIMBLE_PROPERTY::NOTIFY
+  );
+  
   pService->start();
 }
 
@@ -861,6 +740,32 @@ void sendSettingsResponse() {
 #ifdef DEBUG
   Serial.println("Settings response sent");
 #endif
+}
+
+void sendGPSPoint(const GPSPoint& point, uint8_t rideIndex) {
+  if (pGPSDataCharacteristic == nullptr || !bleConnected) return;
+
+  uint8_t data[48];
+  data[0] = rideIndex;
+  data[1] = (point.timestamp >> 24) & 0xFF;
+  data[2] = (point.timestamp >> 16) & 0xFF;
+  data[3] = (point.timestamp >> 8) & 0xFF;
+  data[4] = point.timestamp & 0xFF;
+  
+  memcpy(&data[5], &point.lat, sizeof(double));
+  memcpy(&data[13], &point.lon, sizeof(double));
+  memcpy(&data[21], &point.speed_kmh, sizeof(float));
+  memcpy(&data[25], &point.alt_m, sizeof(float));
+  data[29] = point.sats;
+  memcpy(&data[30], &point.hdop, sizeof(float));
+  data[34] = (point.age >> 8) & 0xFF;
+  data[35] = point.age & 0xFF;
+  memcpy(&data[36], &point.accel_x, sizeof(float));
+  memcpy(&data[40], &point.accel_y, sizeof(float));
+  memcpy(&data[44], &point.accel_z, sizeof(float));
+
+  pGPSDataCharacteristic->setValue(data, 48);
+  pGPSDataCharacteristic->notify();
 }
 #endif
 
