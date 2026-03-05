@@ -103,7 +103,9 @@ class CsvParser {
           sats: sats,
           hdop: hdop,
           age: age,
-          acceleration: _mockAcceleration(timestamp),
+          accelX: _mockAcceleration(timestamp),
+          accelY: 0,
+          accelZ: 1,
         ),
       );
     }
@@ -133,7 +135,9 @@ class CsvParser {
         sats: p['sats'] as int,
         hdop: (p['hdop'] as num).toDouble(),
         age: p['age'] as int,
-        acceleration: (p['acceleration'] as num).toDouble(),
+        accelX: p.containsKey('accelX') ? (p['accelX'] as num).toDouble() : 0,
+        accelY: p.containsKey('accelY') ? (p['accelY'] as num).toDouble() : 0,
+        accelZ: p.containsKey('accelZ') ? (p['accelZ'] as num).toDouble() : 1,
       );
     }).toList();
 

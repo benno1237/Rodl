@@ -135,7 +135,9 @@ class RidesProvider extends ChangeNotifier {
           sats: 8 + random.nextInt(4),
           hdop: 1.0 + random.nextDouble() * 2.0,
           age: 50 + random.nextInt(100),
-          acceleration: accel,
+          accelX: accel,
+          accelY: 0,
+          accelZ: 1,
         ),
       );
 
