@@ -1057,7 +1057,7 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
         }
 
         _recordingSub = Geolocator.getPositionStream(
-          locationSettings: const LocationSettings(accuracy: LocationAccuracy.best, distanceFilter: 1),
+          locationSettings: const LocationSettings(accuracy: LocationAccuracy.bestForNavigation, distanceFilter: 0),
         ).listen((p) {
           final ts = p.timestamp.millisecondsSinceEpoch;
           final point = GPSPoint(
@@ -1109,13 +1109,13 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
 
       _gpsController.text = 'Fetching current location...';
       final pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.best),
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.bestForNavigation, distanceFilter: 0),
       );
       _gpsController.text = _formatPosition(pos);
 
       _gpsController.text = 'Subscribing to location updates...';
       _positionSub = Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.best, distanceFilter: 1),
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.bestForNavigation, distanceFilter: 0),
       ).listen((p) {
         _gpsController.text = _formatPosition(p);
       }, onError: (e) {
