@@ -250,7 +250,7 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -572,8 +572,8 @@ class _SpeedProfileState extends State<_SpeedProfile> {
     return LayoutBuilder(builder: (context, constraints) {
       final totalW = constraints.maxWidth;
       final h = constraints.maxHeight;
-      const leftW = 52.0;
-      const yLabelGap = 12.0; // horizontal gap between axis and labels
+      const leftW = 20.0;
+      const yLabelGap = 5.0; // horizontal gap between axis and labels
       final chartW = (totalW - leftW).clamp(40.0, totalW);
 
       // compute speeds and min/max (force ymin = 0)
@@ -607,7 +607,7 @@ class _SpeedProfileState extends State<_SpeedProfile> {
       // reserve space for x-axis labels below the chart plus a small buffer to avoid overflow
       const xAxisHeight = 30.0;
       const extraBuffer = 45.0;
-      const topInset = 8.0; // small inset to avoid clipping of topmost y-label/title
+      const topInset = 0.0; // small inset to avoid clipping of topmost y-label/title
       final chartH = (h - xAxisHeight - extraBuffer - topInset).clamp(40.0, h - extraBuffer - topInset);
 
       // compute x-axis tick seconds and fractions once (used for both painter and labels)
@@ -680,7 +680,6 @@ class _SpeedProfileState extends State<_SpeedProfile> {
                     top: topPos,
                     right: yLabelGap,
                     child: SizedBox(
-                      width: labelBoxWidth,
                       child: Text(
                         label.toStringAsFixed((label % 1 == 0) ? 0 : 1),
                         textAlign: TextAlign.right,
