@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../providers/rides_provider.dart';
 import '../data/sleds.dart';
 import 'ride_detail_screen.dart';
+import '../services/gpx_export.dart';
 
 class DayDetailScreen extends StatefulWidget {
   final DateTime date;
@@ -202,7 +203,7 @@ class _DayDetailScreenState extends State<DayDetailScreen> {
                                 color: Color.fromRGBO(0, 0, 0, 0.05),
                                 child: Row(
                                   children: [
-                                    // Left action (closest to card center when revealed)
+                                    // Delete action (left)
                                     Expanded(
                                       flex: 1,
                                       child: InkWell(
@@ -241,7 +242,39 @@ class _DayDetailScreenState extends State<DayDetailScreen> {
                                         ),
                                       ),
                                     ),
-                                    // Right-most action (edge of card)
+
+                                    // Export action (middle)
+                                    Expanded(
+                                      flex: 1,
+                                      child: InkWell(
+                                        onTap: () async {
+                                          final messenger = ScaffoldMessenger.of(context);
+                                          try {
+                                            final path = await exportRideToGpx(ride);
+                                            if (!mounted) return;
+                                            messenger.showSnackBar(SnackBar(content: Text('Exported GPX to $path'), duration: Duration(seconds: 3)));
+                                          } catch (e) {
+                                            if (!mounted) return;
+                                            messenger.showSnackBar(SnackBar(content: Text('Export failed: $e'), duration: Duration(seconds: 3)));
+                                          }
+                                          setState(() => _revealedRideId = null);
+                                        },
+                                        child: Container(
+                                          color: Colors.green,
+                                          alignment: Alignment.center,
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: const [
+                                              Icon(Icons.share, color: Colors.white),
+                                              SizedBox(height: 4),
+                                              Text('Export', style: TextStyle(color: Colors.white)),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+
+                                    // Rename action (right)
                                     Expanded(
                                       flex: 1,
                                       child: InkWell(
