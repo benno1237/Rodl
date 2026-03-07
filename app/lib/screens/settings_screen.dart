@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:flutter/services.dart';
-import 'package:archive/archive.dart';
 import 'dart:math' as math;
 import 'dart:async';
 import 'package:flutter_map/flutter_map.dart';
@@ -444,23 +443,6 @@ class _TilePreviewCardState extends State<_TilePreviewCard> {
         final matches = regex.allMatches(text).map((m) => m.group(0)!).toSet().toList();
         if (matches.isNotEmpty) return matches;
       } catch (_) {}
-
-      // If no direct asset entries found, try bundled zip at assets/images/tiles.zip
-      try {
-        final zipData = await rootBundle.load('assets/images/tiles.zip');
-        final bytes = zipData.buffer.asUint8List();
-        final archive = ZipDecoder().decodeBytes(bytes);
-        final List<String> entries = [];
-        for (final file in archive) {
-          if (!file.isFile) continue;
-          final name = file.name;
-          if (name.startsWith('assets/tiles/') || name.contains('/tiles/') || name.startsWith('assets/tracks/') || name.contains('/tracks/')) {
-            entries.add(name);
-          }
-        }
-        return entries;
-      } catch (_) {}
-
       return <String>[];
     }
   }
