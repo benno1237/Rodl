@@ -1,4 +1,3 @@
- 
 class TrackSection {
   final String id;
   final String? name;
@@ -18,28 +17,36 @@ class TrackSection {
   });
 
   factory TrackSection.fromJson(Map<String, dynamic> json) => TrackSection(
-        id: json['id'] as String,
-        name: json['name'] as String?,
-        startIndex: json['startIndex'] is int ? json['startIndex'] as int : (json['startIndex'] is num ? (json['startIndex'] as num).toInt() : null),
-        endIndex: json['endIndex'] is int ? json['endIndex'] as int : (json['endIndex'] is num ? (json['endIndex'] as num).toInt() : null),
-        startTimeIso: json['startTimeIso'] as String?,
-        endTimeIso: json['endTimeIso'] as String?,
-      );
+    id: json['id'] as String,
+    name: json['name'] as String?,
+    startIndex: json['startIndex'] is int
+        ? json['startIndex'] as int
+        : (json['startIndex'] is num
+              ? (json['startIndex'] as num).toInt()
+              : null),
+    endIndex: json['endIndex'] is int
+        ? json['endIndex'] as int
+        : (json['endIndex'] is num ? (json['endIndex'] as num).toInt() : null),
+    startTimeIso: json['startTimeIso'] as String?,
+    endTimeIso: json['endTimeIso'] as String?,
+  );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        if (name != null) 'name': name,
-        if (startIndex != null) 'startIndex': startIndex,
-        if (endIndex != null) 'endIndex': endIndex,
-        if (startTimeIso != null) 'startTimeIso': startTimeIso,
-        if (endTimeIso != null) 'endTimeIso': endTimeIso,
-      };
+    'id': id,
+    if (name != null) 'name': name,
+    if (startIndex != null) 'startIndex': startIndex,
+    if (endIndex != null) 'endIndex': endIndex,
+    if (startTimeIso != null) 'startTimeIso': startTimeIso,
+    if (endTimeIso != null) 'endTimeIso': endTimeIso,
+  };
 }
 
 class Track {
   final String id;
   final String name;
   final String gpxPath; // e.g. assets/tracks/berger_alm.gpx or a remote URL
+  final List<double>?
+  centroid; // Optional pre-computed centroid [lat, lon] for map centering
   final String? description;
   final List<TrackSection> sections;
 
@@ -47,13 +54,17 @@ class Track {
     required this.id,
     required this.name,
     required this.gpxPath,
+    this.centroid,
     this.description,
     this.sections = const [],
   });
 
   factory Track.fromJson(Map<String, dynamic> json) {
-    final sec = (json['sections'] as List<dynamic>?)
-            ?.map((e) => TrackSection.fromJson(Map<String, dynamic>.from(e as Map)))
+    final sec =
+        (json['sections'] as List<dynamic>?)
+            ?.map(
+              (e) => TrackSection.fromJson(Map<String, dynamic>.from(e as Map)),
+            )
             .toList() ??
         <TrackSection>[];
 
@@ -63,14 +74,35 @@ class Track {
       gpxPath: json['gpxPath'] as String,
       description: json['description'] as String?,
       sections: sec,
+      centroid: null,
+    );
+  }
+
+  Track copyWith({
+    String? id,
+    String? name,
+    String? gpxPath,
+    List<double>? centroid,
+    String? description,
+    List<TrackSection>? sections,
+  }) {
+    return Track(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      gpxPath: gpxPath ?? this.gpxPath,
+      centroid: centroid ?? this.centroid,
+      description: description ?? this.description,
+      sections: sections ?? this.sections,
     );
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'gpxPath': gpxPath,
-        if (description != null) 'description': description,
-        if (sections.isNotEmpty) 'sections': sections.map((s) => s.toJson()).toList(),
-      };
+    'id': id,
+    'name': name,
+    'gpxPath': gpxPath,
+    if (description != null) 'description': description,
+    if (sections.isNotEmpty)
+      'sections': sections.map((s) => s.toJson()).toList(),
+    if (centroid != null) 'centroid': centroid,
+  };
 }

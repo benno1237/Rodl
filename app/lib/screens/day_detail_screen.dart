@@ -153,7 +153,22 @@ class _DayDetailScreenState extends State<DayDetailScreen> {
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 6),
+                                const SizedBox(height: 6),
+                                if (ride.trackName != null) ...[
+                                  Row(
+                                    children: [
+                                      Icon(Icons.place, size: 14, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                      const SizedBox(width: 8),
+                                      Flexible(
+                                        child: Text(
+                                          ride.trackName!,
+                                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
                             // Show sled used for this ride if available
                             if (ride.sledId != null)
                               Builder(builder: (ctx) {

@@ -25,14 +25,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Capture provider synchronously to avoid using BuildContext across
-      // the async delay, then use the captured reference inside the delay.
-      final ridesProv = context.read<RidesProvider>();
-      Future.delayed(const Duration(milliseconds: 200), () {
-        if (ridesProv.rides.isEmpty) {
-          ridesProv.loadMockData();
-        }
-      });
+      // nothing: do not populate mock rides automatically
     });
     _loadFavorites();
   }
@@ -224,9 +217,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 0,
                 (sum, ride) => sum + ride.durationSeconds,
               );
-              final maxSpeed = rides
+                final maxSpeed = rides
                   .map((r) => r.maxSpeed)
                   .reduce((a, b) => a > b ? a : b);
+                final trackNames = rides.map((r) => r.trackName).where((n) => n != null).toSet();
+                final String? uniqueTrack = trackNames.length == 1 ? trackNames.first : null;
 
               return Card(
                 margin: const EdgeInsets.only(bottom: 12),
@@ -280,9 +275,14 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 6),
+                        
                         Row(
                           children: [
+                            if (uniqueTrack != null) ...[
+                              _StatChip(icon: Icons.place, label: uniqueTrack),
+                              const SizedBox(width: 16),
+                            ],
                             _StatChip(
                               icon: Icons.timer_outlined,
                               label: _formatDuration(totalDuration),

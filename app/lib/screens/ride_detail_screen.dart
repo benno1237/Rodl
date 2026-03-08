@@ -96,6 +96,11 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildStatsRow(context),
+                  const SizedBox(height: 8),
+                  if (widget.ride.trackName != null) ...[
+                    Chip(label: Text(widget.ride.trackName!)),
+                    const SizedBox(height: 12),
+                  ],
                   const SizedBox(height: 12),
                   _buildSpeedProfile(points),
                   const SizedBox(height: 24),

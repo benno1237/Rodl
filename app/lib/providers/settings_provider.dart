@@ -7,6 +7,8 @@ import '../services/ble_service.dart';
 class SettingsProvider extends ChangeNotifier {
   Settings _settings = Settings();
   String _username = '';
+  bool _mockRidesEnabled = false;
+  bool _mockLeaderboardEnabled = true;
   final BleService _bleService = BleService();
   StreamSubscription? _bleSubscription;
   bool _isConnected = false;
@@ -24,6 +26,37 @@ class SettingsProvider extends ChangeNotifier {
       notifyListeners();
     });
     _loadUsername();
+    _loadMockFlags();
+  }
+
+  bool get mockRidesEnabled => _mockRidesEnabled;
+  bool get mockLeaderboardEnabled => _mockLeaderboardEnabled;
+
+  Future<void> _loadMockFlags() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _mockRidesEnabled = prefs.getBool('mock_rides_enabled') ?? false;
+      _mockLeaderboardEnabled = prefs.getBool('mock_leaderboard_enabled') ?? true;
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  Future<void> setMockRidesEnabled(bool v) async {
+    _mockRidesEnabled = v;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('mock_rides_enabled', v);
+    } catch (_) {}
+    notifyListeners();
+  }
+
+  Future<void> setMockLeaderboardEnabled(bool v) async {
+    _mockLeaderboardEnabled = v;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('mock_leaderboard_enabled', v);
+    } catch (_) {}
+    notifyListeners();
   }
 
   /// Set the selected bundled tile region. If [region] is non-null, extract

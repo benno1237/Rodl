@@ -9,8 +9,21 @@ class Ride {
   final String? name;
   final String? sledId;
   final String? username;
+  final String? trackId;
+  final String? trackName;
+  final bool isMock;
 
-  Ride({required this.id, required this.points, required this.startTime, this.name, this.sledId, this.username});
+  Ride({
+    required this.id,
+    required this.points,
+    required this.startTime,
+    this.name,
+    this.sledId,
+    this.username,
+    this.trackId,
+    this.trackName,
+    this.isMock = false,
+  });
 
   DateTime get date => DateTime(startTime.year, startTime.month, startTime.day);
 
@@ -85,6 +98,9 @@ class Ride {
         'name': name,
       'sledId': sledId,
       'username': username,
+        'trackId': trackId,
+        'trackName': trackName,
+        'isMock': isMock,
       };
 
   factory Ride.fromJson(Map<String, dynamic> json) {
@@ -97,6 +113,9 @@ class Ride {
       name: json['name'] as String?,
       sledId: json.containsKey('sledId') ? (json['sledId'] as String?) : null,
       username: json.containsKey('username') ? (json['username'] as String?) : null,
+      trackId: json.containsKey('trackId') ? (json['trackId'] as String?) : null,
+      trackName: json.containsKey('trackName') ? (json['trackName'] as String?) : null,
+      isMock: json.containsKey('isMock') ? (json['isMock'] as bool) : false,
     );
   }
 }

@@ -9,6 +9,8 @@ import '../models/track.dart';
 import '../services/gpx_loader.dart';
 import '../services/tile_cache.dart';
 import '../widgets/leaderboard.dart';
+import 'package:provider/provider.dart';
+import '../providers/settings_provider.dart';
 
 class TrackDetailScreen extends StatefulWidget {
   final Track track;
@@ -361,10 +363,13 @@ class _TrackDetailScreenState extends State<TrackDetailScreen> {
                     ),
                     const SizedBox(height: 12),
                     // Leaderboard as part of the scrollable content (below the map)
-                    Leaderboard(
-                      sections: ['Full', ...widget.track.sections.map((s) => s.name ?? 'Section')],
-                      selectedIndex: _selectedSectionIndex == null ? 0 : (_selectedSectionIndex! + 1),
-                    ),
+                    Consumer<SettingsProvider>(builder: (ctx, settingsProv, child) {
+                      if (!settingsProv.mockLeaderboardEnabled) return const SizedBox.shrink();
+                      return Leaderboard(
+                        sections: ['Full', ...widget.track.sections.map((s) => s.name ?? 'Section')],
+                        selectedIndex: _selectedSectionIndex == null ? 0 : (_selectedSectionIndex! + 1),
+                      );
+                    }),
                   ],
                 ),
               ),

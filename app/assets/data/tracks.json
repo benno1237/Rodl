@@ -25,5 +25,11 @@
     "name": "Rangger Köpfl",
     "gpxPath": "assets/tracks/rangger_koepfl.gpx",
     "sections": []
+  },
+  {
+  "id": "TRACK-TEST",
+  "name": "Uni",
+  "gpxPath": "assets/tracks/uni.gpx",
+  "sections": []
   }
 ]
