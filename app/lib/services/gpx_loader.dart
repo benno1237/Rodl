@@ -46,16 +46,39 @@ class GpxLoader {
         }
       }
 
-      // speed is not standard in GPX trkpt; leave as 0.0
+      double speedKmh = 0.0;
+      double accelX = 0.0;
+      double accelY = 0.0;
+      double accelZ = 0.0;
+      double hdop = 99.9;
+
+      final extensions = e.getElement('extensions');
+      if (extensions != null) {
+        final speedEl = extensions.getElement('rodl_speed');
+        if (speedEl != null) {
+          speedKmh = double.tryParse(speedEl.getAttribute('kmh') ?? '') ?? 0.0;
+        }
+        final sensorsEl = extensions.getElement('rodl_sensors');
+        if (sensorsEl != null) {
+          accelX = double.tryParse(sensorsEl.getAttribute('accelX') ?? '') ?? 0.0;
+          accelY = double.tryParse(sensorsEl.getAttribute('accelY') ?? '') ?? 0.0;
+          accelZ = double.tryParse(sensorsEl.getAttribute('accelZ') ?? '') ?? 0.0;
+          hdop = double.tryParse(sensorsEl.getAttribute('hdop') ?? '') ?? 99.9;
+        }
+      }
+
       points.add(GPSPoint(
         timestamp: timestampMillis,
         lat: lat,
         lon: lon,
-        speedKmh: 0.0,
+        speedKmh: speedKmh,
         altM: alt,
         sats: 0,
-        hdop: 99.9,
+        hdop: hdop,
         age: 0,
+        accelX: accelX,
+        accelY: accelY,
+        accelZ: accelZ,
       ));
     }
 

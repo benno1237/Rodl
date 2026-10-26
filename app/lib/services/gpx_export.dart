@@ -40,7 +40,18 @@ Future<String> exportRideToGpx(Ride ride) async {
               builder.attribute('lon', pnt.lon.toString());
               builder.element('ele', nest: pnt.altM.toString());
               builder.element('time', nest: t.toIso8601String());
-              builder.element('speed', nest: (pnt.speedKmh / 3.6).toString());
+              builder.element('extensions', nest: () {
+                builder.element('rodl_speed', nest: () {
+                  builder.attribute('kmh', pnt.speedKmh.toString());
+                  builder.attribute('ms', (pnt.speedKmh / 3.6).toString());
+                });
+                builder.element('rodl_sensors', nest: () {
+                  builder.attribute('accelX', pnt.accelX.toString());
+                  builder.attribute('accelY', pnt.accelY.toString());
+                  builder.attribute('accelZ', pnt.accelZ.toString());
+                  builder.attribute('hdop', pnt.hdop.toString());
+                });
+              });
             });
           }
         }
