@@ -29,7 +29,10 @@ class BleService {
       );
 
       final device = scanResult.device;
-      await device.connect(timeout: const Duration(seconds: 10));
+      await device.connect(
+        license: License.nonprofit,
+        timeout: const Duration(seconds: 10),
+      );
       _device = device;
 
       final services = await device.discoverServices();

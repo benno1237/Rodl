@@ -11,6 +11,7 @@ class Ride {
   final String? username;
   final String? trackId;
   final String? trackName;
+  final int? segmentIndex;
   final bool isMock;
 
   Ride({
@@ -22,6 +23,7 @@ class Ride {
     this.username,
     this.trackId,
     this.trackName,
+    this.segmentIndex,
     this.isMock = false,
   });
 
@@ -96,10 +98,11 @@ class Ride {
         'startTime': startTime.millisecondsSinceEpoch,
         'points': points.map((p) => p.toJson()).toList(),
         'name': name,
-      'sledId': sledId,
-      'username': username,
+        'sledId': sledId,
+        'username': username,
         'trackId': trackId,
         'trackName': trackName,
+        'segmentIndex': segmentIndex,
         'isMock': isMock,
       };
 
@@ -115,6 +118,7 @@ class Ride {
       username: json.containsKey('username') ? (json['username'] as String?) : null,
       trackId: json.containsKey('trackId') ? (json['trackId'] as String?) : null,
       trackName: json.containsKey('trackName') ? (json['trackName'] as String?) : null,
+      segmentIndex: json.containsKey('segmentIndex') ? (json['segmentIndex'] as int?) : null,
       isMock: json.containsKey('isMock') ? (json['isMock'] as bool) : false,
     );
   }

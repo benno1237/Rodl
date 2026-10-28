@@ -17,10 +17,13 @@ class RideDetailScreen extends StatefulWidget {
   State<RideDetailScreen> createState() => _RideDetailScreenState();
 }
 
+enum TrackColorMode { none, speed, hdop }
+
 class _RideDetailScreenState extends State<RideDetailScreen> {
   final MapController _mapController = MapController();
   final double _initialMapZoom = 14.0;
   int? _selectedPointIndex;
+  TrackColorMode _trackColorMode = TrackColorMode.none;
 
   @override
   Widget build(BuildContext context) {
@@ -60,13 +63,13 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
                     tileProvider: CachedNetworkTileProvider(),
                   ),
                   PolylineLayer(
-                    polylines: [
-                      Polyline(
-                        points: points.map((p) => LatLng(p.lat, p.lon)).toList(),
-                        color: Theme.of(context).colorScheme.primary,
-                        strokeWidth: 4,
-                      ),
-                    ],
+                    polylines: _buildTrackPolylines(
+                      points,
+                      _trackColorMode == TrackColorMode.none 
+                          ? Colors.purple 
+                          : (_trackColorMode == TrackColorMode.speed ? Colors.blue : Colors.green),
+                      _trackColorMode,
+                    ),
                   ),
                   if (_selectedPointIndex != null)
                     MarkerLayer(
@@ -103,6 +106,8 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
                   ],
                   const SizedBox(height: 12),
                   _buildSpeedProfile(points),
+                  const SizedBox(height: 12),
+                  _buildHdopProfile(points),
                   const SizedBox(height: 24),
                   Text(
                     'Ride Data',
@@ -256,14 +261,106 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       child: Padding(
         padding: const EdgeInsets.all(10),
-        child: Column(
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Speed Profile', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+            Row(
+              children: [
+                Expanded(child: Text('Speed Profile', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold))),
+                TextButton.icon(
+                  onPressed: () => setState(() => _trackColorMode = _trackColorMode == TrackColorMode.speed ? TrackColorMode.none : TrackColorMode.speed),
+                  icon: Icon(_trackColorMode == TrackColorMode.speed ? Icons.visibility : Icons.visibility_off, size: 18),
+                  label: Text('Plot'),
+                ),
+              ],
+            ),
             const SizedBox(height: 8),
             SizedBox(
               height: 240,
               child: _SpeedProfile(
+                points: points,
+                onIndexChanged: (idx) {
+                  setState(() {
+                    _selectedPointIndex = idx;
+                  });
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Polyline> _buildTrackPolylines(List<GPSPoint> points, Color baseColor, TrackColorMode mode) {
+    if (points.length < 2) {
+      return points.map((p) => Polyline(points: [LatLng(p.lat, p.lon)], color: baseColor, strokeWidth: 4)).toList();
+    }
+
+    if (mode == TrackColorMode.none) {
+      final allPoints = points.map((p) => LatLng(p.lat, p.lon)).toList();
+      return [Polyline(points: allPoints, color: baseColor, strokeWidth: 4)];
+    }
+
+    const double minVal = 1.0;
+    const double maxVal = 10.0;
+
+    final polylines = <Polyline>[];
+    for (int i = 0; i < points.length - 1; i++) {
+      final p1 = points[i];
+      final p2 = points[i + 1];
+      
+      double value;
+      if (mode == TrackColorMode.speed) {
+        value = (p1.speedKmh + p2.speedKmh) / 2;
+      } else {
+        value = (p1.hdop + p2.hdop) / 2;
+      }
+      
+      final clamped = value.clamp(minVal, maxVal);
+      final alpha = 1.0 - ((clamped - minVal) / (maxVal - minVal)) * 0.7;
+
+      polylines.add(Polyline(
+        points: [LatLng(p1.lat, p1.lon), LatLng(p2.lat, p2.lon)],
+        color: baseColor.withAlpha((alpha * 255).round()),
+        strokeWidth: 4,
+      ));
+    }
+
+    return polylines;
+  }
+
+  Widget _buildHdopProfile(List<GPSPoint> points) {
+    final hdops = points.map((p) => p.hdop).toList();
+    if (hdops.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Text('No HDOP data', style: Theme.of(context).textTheme.bodyMedium),
+      );
+    }
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(child: Text('Accuracy Profile', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold))),
+                TextButton.icon(
+                  onPressed: () => setState(() => _trackColorMode = _trackColorMode == TrackColorMode.hdop ? TrackColorMode.none : TrackColorMode.hdop),
+                  icon: Icon(_trackColorMode == TrackColorMode.hdop ? Icons.visibility : Icons.visibility_off, size: 18),
+                  label: Text('Plot'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 240,
+              child: _HdopProfile(
                 points: points,
                 onIndexChanged: (idx) {
                   setState(() {
@@ -780,6 +877,373 @@ class _SpeedProfileState extends State<_SpeedProfile> {
         ),
       ]),
     );
-    });
+    }    );
   }
 }
+
+class _HdopProfilePainter extends CustomPainter {
+  final List<double> hdops;
+  final int? highlightIndex;
+  final List<double> yTicks;
+  final double maxHdop;
+  final List<double> xTicks;
+
+  _HdopProfilePainter({
+    required this.hdops,
+    this.highlightIndex,
+    required this.yTicks,
+    required this.maxHdop,
+    this.xTicks = const [],
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final n = hdops.length;
+    if (n == 0) return;
+
+    final dx = size.width / (n - 1).clamp(1, n);
+    final dy = size.height / (yTicks.isNotEmpty ? yTicks.last : 10.0);
+
+    final gridPaint = Paint()
+      ..color = const Color(0xFFEEEEEE)
+      ..strokeWidth = 1;
+
+    for (final yt in yTicks) {
+      final y = size.height - (yt * dy);
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    }
+
+    for (final xt in xTicks) {
+      final x = size.width * xt;
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
+    }
+
+    final linePaint = Paint()
+      ..color = const Color(0xFF43A047)
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+
+    final fillPaint = Paint()
+      ..color = const Color(0x3343A047)
+      ..style = PaintingStyle.fill;
+
+    final path = ui.Path();
+    final fillPath = ui.Path();
+    fillPath.moveTo(0, size.height);
+
+    for (var i = 0; i < n; i++) {
+      final x = dx * i;
+      final y = size.height - (hdops[i] * dy).clamp(0, size.height);
+      if (i == 0) {
+        path.moveTo(x, y);
+        fillPath.lineTo(x, y);
+      } else {
+        path.lineTo(x, y);
+        fillPath.lineTo(x, y);
+      }
+    }
+
+    fillPath.lineTo(dx * (n - 1), size.height);
+    fillPath.close();
+    canvas.drawPath(fillPath, fillPaint);
+    canvas.drawPath(path, linePaint);
+
+    if (highlightIndex != null && highlightIndex! >= 0 && highlightIndex! < n) {
+      final i = highlightIndex!;
+      final x = dx * i;
+      final y = size.height - (hdops[i] * dy).clamp(0, size.height);
+      final highlight = Paint()..color = const Color(0xFF43A047);
+      canvas.drawCircle(Offset(x, y), 5.0, highlight);
+      canvas.drawCircle(Offset(x, y), 8.0, highlight..color = const Color.fromARGB(30, 255, 255, 255));
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _HdopProfilePainter oldDelegate) {
+    if (oldDelegate.hdops.length != hdops.length) return true;
+    for (var i = 0; i < hdops.length; i++) {
+      if (oldDelegate.hdops[i] != hdops[i]) return true;
+    }
+    return false;
+  }
+}
+
+class _HdopProfile extends StatefulWidget {
+  final List<GPSPoint> points;
+  final ValueChanged<int?>? onIndexChanged;
+
+  const _HdopProfile({required this.points, this.onIndexChanged});
+
+  @override
+  State<_HdopProfile> createState() => _HdopProfileState();
+}
+
+class _HdopProfileState extends State<_HdopProfile> {
+  double? _tapX;
+  int? _selectedIndex;
+  OverlayEntry? _overlayEntry;
+  String _overlayText = '';
+  String _overlaySubtitle = '';
+  Offset? _overlayGlobal;
+
+  void _onDrag(Offset localPosition, double width, BuildContext ctx) {
+    final n = widget.points.length;
+    if (n == 0) return;
+    final dx = localPosition.dx.clamp(0.0, width);
+    final index = ((dx / width) * (n - 1)).round().clamp(0, n - 1);
+    final p = widget.points[index];
+    final rel = ((p.timestamp - widget.points.first.timestamp) / 1000).round();
+    setState(() {
+      _tapX = dx;
+      _selectedIndex = index;
+      _overlayText = '${p.hdop.toStringAsFixed(1)}';
+      final minutes = rel ~/ 60;
+      final seconds = rel % 60;
+      _overlaySubtitle = '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    });
+    widget.onIndexChanged?.call(index);
+
+    final renderBox = ctx.findRenderObject() as RenderBox?;
+    if (renderBox != null) {
+      final globalOrigin = renderBox.localToGlobal(Offset.zero);
+      final globalX = (globalOrigin.dx + localPosition.dx).clamp(0.0, MediaQuery.of(ctx).size.width);
+      final fixedTop = (globalOrigin.dy - 48.0).clamp(8.0, MediaQuery.of(ctx).size.height - 48.0);
+      _overlayGlobal = Offset(globalX, fixedTop);
+      _ensureOverlay();
+    }
+  }
+
+  void _clearSelectionDelayed() {
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        setState(() {
+          _tapX = null;
+          _selectedIndex = null;
+        });
+        widget.onIndexChanged?.call(null);
+        _removeOverlay();
+      }
+    });
+  }
+
+  void _ensureOverlay() {
+    if (_overlayEntry == null) {
+      _overlayEntry = OverlayEntry(builder: (context) {
+        if (_overlayGlobal == null) return const SizedBox.shrink();
+        final left = (_overlayGlobal!.dx - 40).clamp(8.0, MediaQuery.of(context).size.width - 88.0);
+        final top = (_overlayGlobal!.dy).clamp(8.0, MediaQuery.of(context).size.height - 48.0);
+        return Positioned(
+          left: left,
+          top: top,
+          child: Material(
+            elevation: 8,
+            borderRadius: BorderRadius.circular(6),
+            color: const Color(0xFF43A047),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(child: Text(_overlayText, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold, color: Colors.white))),
+                  Text(_overlaySubtitle, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.white), textAlign: TextAlign.left),
+                ],
+              ),
+            ),
+          ),
+        );
+      });
+      Overlay.of(context).insert(_overlayEntry!);
+    } else {
+      _overlayEntry!.markNeedsBuild();
+    }
+  }
+
+  void _removeOverlay() {
+    _overlayEntry?.remove();
+    _overlayEntry = null;
+  }
+
+  @override
+  void dispose() {
+    _overlayEntry?.remove();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hdops = widget.points.map((p) => p.hdop).toList();
+    if (hdops.isEmpty) return const SizedBox.shrink();
+
+    const double minHdop = 0.0;
+    final maxHdopRaw = hdops.reduce((a, b) => a > b ? a : b).clamp(1.0, 20.0);
+
+    const int desiredSegments = 5;
+    double rawStep = (maxHdopRaw - minHdop) / desiredSegments;
+    double exp = (rawStep > 0) ? math.pow(10, (math.log(rawStep) / math.ln10).floor()).toDouble() : 1.0;
+    final candidates = [1.0, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0];
+    double step = exp;
+    for (final c in candidates) {
+      if (exp * c >= rawStep) {
+        step = exp * c;
+        break;
+      }
+    }
+
+    final niceMax = (maxHdopRaw / step).ceil() * step;
+    final maxHdopAxis = niceMax;
+    final List<double> yTicks = [];
+    for (double v = 0; v <= niceMax + 0.0001; v += step) {
+      yTicks.add(double.parse(v.toStringAsFixed(6)));
+    }
+
+    final startMs = widget.points.first.timestamp;
+    final endMs = widget.points.last.timestamp;
+    final duration = (endMs - startMs).clamp(0, 1 << 60);
+    final durationSec = (duration / 1000).round();
+
+    List<int> tickSeconds;
+    if (durationSec <= 0) {
+      tickSeconds = [0];
+    } else if (durationSec <= 60) {
+      tickSeconds = [for (int t = 0; t <= durationSec; t += 10) t];
+    } else if (durationSec <= 300) {
+      tickSeconds = [for (int t = 0; t <= durationSec; t += 30) t];
+    } else if (durationSec < 600) {
+      tickSeconds = [for (int t = 0; t <= durationSec; t += 60) t];
+    } else if (durationSec < 3600) {
+      tickSeconds = [for (int t = 0; t <= durationSec; t += 300) t];
+    } else {
+      tickSeconds = [for (int t = 0; t <= durationSec; t += 3600) t];
+    }
+
+    List<int> normalizeTicks(List<int> ticks) {
+      const int maxTicks = 6;
+      if (ticks.length <= maxTicks) return ticks;
+      int step = (ticks.length > 1) ? ticks[1] - ticks[0] : 1;
+      while (ticks.length > maxTicks) {
+        step = (step * 2).clamp(1, durationSec);
+        ticks = [for (int t = 0; t <= durationSec; t += step) t];
+        if (step >= durationSec) break;
+      }
+      if (!ticks.contains(durationSec)) ticks = [...ticks, durationSec];
+      return ticks;
+    }
+
+    final ticks = normalizeTicks(tickSeconds);
+    final tickFractions = ticks.map((s) => durationSec > 0 ? (s / durationSec) : 0.0).toList();
+
+    String fmtFromSeconds(int totalSeconds) {
+      final minutes = totalSeconds ~/ 60;
+      final seconds = totalSeconds % 60;
+      return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    }
+
+    const leftW = 36.0;
+    const yLabelGap = 5.0;
+    const xAxisHeight = 24.0;
+
+    return LayoutBuilder(
+      builder: (ctx, constraints) {
+        final chartW = (constraints.maxWidth - leftW).clamp(40.0, constraints.maxWidth);
+        final chartH = (constraints.maxHeight - xAxisHeight - 24).clamp(40.0, constraints.maxHeight);
+
+        return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: leftW,
+          height: (chartH + xAxisHeight + 1),
+          child: Stack(
+            children: [
+              for (var i = 0; i < yTicks.length; i++) ...[
+                Builder(builder: (ctx) {
+                  final label = yTicks[i];
+                  final textStyle = Theme.of(ctx).textTheme.bodySmall ?? const TextStyle(fontSize: 12);
+                  final labelBoxWidth = (leftW - 6 - yLabelGap).clamp(8.0, leftW - 6);
+                  final tp = TextPainter(
+                    text: TextSpan(text: label.toStringAsFixed((label % 1 == 0) ? 0 : 1), style: textStyle),
+                    textDirection: Directionality.of(ctx),
+                  )..layout(minWidth: 0, maxWidth: labelBoxWidth);
+
+                  final frac = yTicks[i] / maxHdopAxis;
+                  final rawTop = (1 - frac) * chartH - tp.height / 2;
+                  final topPos = rawTop.clamp(0.0, chartH - tp.height);
+
+                  return Positioned(
+                    top: topPos,
+                    right: yLabelGap,
+                    child: SizedBox(
+                      child: Text(
+                        label.toStringAsFixed((label % 1 == 0) ? 0 : 1),
+                        textAlign: TextAlign.right,
+                        style: textStyle,
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ],
+          ),
+        ),
+        Expanded(
+          child: GestureDetector(
+            onPanDown: (d) => _onDrag(d.localPosition, chartW, context),
+            onPanUpdate: (d) => _onDrag(d.localPosition, chartW, context),
+            onPanEnd: (e) => _clearSelectionDelayed(),
+            onTapDown: (d) => _onDrag(d.localPosition, chartW, context),
+            onTapUp: (d) => _clearSelectionDelayed(),
+            child: Column(
+              children: [
+                SizedBox(
+                  height: chartH,
+                  child: Stack(
+                    children: [
+                      CustomPaint(
+                        size: Size(chartW, chartH),
+                        painter: _HdopProfilePainter(
+                          hdops: hdops,
+                          highlightIndex: _selectedIndex,
+                          yTicks: yTicks,
+                          maxHdop: maxHdopAxis,
+                          xTicks: tickFractions,
+                        ),
+                      ),
+                      if (_tapX != null && _selectedIndex != null)
+                        Positioned(
+                          left: (_tapX! - 0.5).clamp(0.0, chartW - 1.0),
+                          top: 0,
+                          bottom: 0,
+                          child: Container(width: 1, color: Theme.of(context).colorScheme.onSurface.withAlpha(31)),
+                        ),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  height: xAxisHeight,
+                  width: chartW,
+                  child: Stack(
+                    children: ticks.asMap().entries.map((entry) {
+                      final idx = entry.key;
+                      final s = entry.value;
+                      if (idx == 0 && s == 0) return const SizedBox.shrink();
+                      final f = durationSec > 0 ? (s / durationSec) : 0.0;
+                      final alignX = -1.0 + 2.0 * f;
+                      return Align(
+                        alignment: Alignment(alignX, 0),
+                        child: Text(fmtFromSeconds(s), style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurface)),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        ],
+      );
+      },
+    );
+  }
+}
+
