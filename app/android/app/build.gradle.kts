@@ -45,7 +45,8 @@ tasks.matching { it.name == "compileFlutterBuildRelease" }.configureEach {
 
 android {
     namespace = "com.example.rodl"
-    compileSdk = flutter.compileSdkVersion
+    // permission_handler_android requires API level 37
+    compileSdk = maxOf(flutter.compileSdkVersion, 37)
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

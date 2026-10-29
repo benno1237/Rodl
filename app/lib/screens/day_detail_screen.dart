@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 // flutter_slidable no longer used in this file (in-card actions implemented).
 import 'package:intl/intl.dart';
 import '../providers/rides_provider.dart';
+import '../providers/settings_provider.dart';
 import '../data/sleds.dart';
 import 'ride_detail_screen.dart';
 import '../services/gpx_export.dart';
@@ -174,7 +175,10 @@ class _DayDetailScreenState extends State<DayDetailScreen> {
                               Builder(builder: (ctx) {
                                 final sled = sledsById[ride.sledId];
                                 final color = sled?.primaryColor ?? Theme.of(ctx).colorScheme.outline;
-                                final label = sled?.name ?? 'Unknown sled';
+                                final label =
+                                    ctx.read<SettingsProvider>().sledDisplayName(ride.sledId!) ??
+                                        sled?.name ??
+                                        'Unknown sled';
                                 return Row(
                                   children: [
                                     Icon(Icons.two_wheeler, size: 14, color: color),

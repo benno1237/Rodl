@@ -8,12 +8,13 @@ import '../widgets/split_color_bar_slider.dart';
 import '../widgets/color_wheel.dart';
 import '../widgets/effect_border.dart';
 import 'package:provider/provider.dart';
-import 'package:geolocator/geolocator.dart';
 import '../providers/settings_provider.dart';
 import '../models/settings.dart';
 import '../models/gps_point.dart';
 import '../providers/rides_provider.dart';
 import '../models/ride.dart';
+import '../services/ble_service.dart';
+import '../services/name_cache.dart';
 import '../services/foreground_location_service.dart' as fg_service;
 
 class SledDetailScreen extends StatefulWidget {
@@ -30,7 +31,6 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
   double gy = 0.0;
 
   late final ValueNotifier<Offset> _gNotifier;
-  StreamSubscription? _gSub;
   // Glow controller removed — per-effect animations live in `EffectBorder`.
 
   @override
@@ -46,11 +46,32 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
 
   // GPS
   late final TextEditingController _gpsController;
-  StreamSubscription<Position>? _positionSub;
-  // Recording
+  // Recording (device GPS over BLE)
   bool _isRecording = false;
+  bool _finishingRecording = false;
   final List<GPSPoint> _recordedPoints = [];
-  StreamSubscription<Position>? _recordingSub;
+  StreamSubscription? _bleGpsSub;
+  StreamSubscription? _bleStatusSub;
+  StreamSubscription? _bleConnSub;
+  BleDeviceStatus? _lastStatus;
+  bool _bleConnected = false;
+  // Auto-reconnect grace while recording: a short link drop pauses the ride
+  // instead of ending it. We retry the paired board until the deadline.
+  static const Duration _reconnectGrace = Duration(seconds: 5);
+  static const Duration _reconnectRetryInterval = Duration(seconds: 2);
+  bool _reconnecting = false;
+  int _reconnectAttempts = 0;
+  Timer? _reconnectRetryTimer;
+  Timer? _reconnectDeadlineTimer;
+  /// `device millis() + _epochOffset == epoch ms`
+  int? _epochOffset;
+  int? _sessionRideIndex;
+  /// Fix tracking: the sled streams a 1 Hz GPS heartbeat while idle so we
+  /// can show "No GPS fix" and gate starting a ride.
+  DateTime? _lastFixAt;
+  String _lastFixText = '';
+  DateTime? _connectedAt;
+  Timer? _fixUiTimer;
 
   // RGB strip
   double stripBrightness = 50;
@@ -69,41 +90,158 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<SettingsProvider>().connect();
+      if (!mounted) return;
+      final provider = context.read<SettingsProvider>();
+      provider.connectToSled(widget.sled.id);
+      final ble = provider.bleService;
+      _bleGpsSub = ble.gpsPointStream.listen(_onBleGpsPoint);
+      _bleStatusSub = ble.statusStream.listen((status) {
+        _lastStatus = status;
+        setState(() {});
+      });
+      _bleConnSub = ble.connectionStream.listen((connected) {
+        _bleConnected = connected;
+        if (connected) {
+          _cancelReconnect();
+          _connectedAt = DateTime.now();
+          _lastFixAt = null;
+          _lastFixText = '';
+          _startFixUiTimer();
+          if (!_isRecording) {
+            _gpsController.text =
+                'Connected to sled\nWaiting for GPS data from the sled...';
+          }
+          ble.getStatus().then((s) {
+            if (s != null && mounted) {
+              _lastStatus = s;
+              setState(() {});
+            }
+          });
+        } else {
+          _connectedAt = null;
+          _lastFixAt = null;
+          _lastFixText = '';
+          _fixUiTimer?.cancel();
+          if (_isRecording) {
+            _beginReconnect();
+          }
+        }
+        setState(() {});
+      });
+      if (provider.isConnected) {
+        // Already linked when this screen opened: no stream event will fire.
+        _bleConnected = true;
+        _connectedAt = DateTime.now();
+        _startFixUiTimer();
+      }
     });
 
-    // Per-effect animations handled by `EffectBorder` widget.
-
-    // Simulated live updates (replace later with BLE stream)
     _gNotifier = ValueNotifier(const Offset(0, 0));
-    _gSub = Stream.periodic(const Duration(milliseconds: 100), (i) {
-      return (
-        (i % 100) / 50 - 1,
-        ((i * 1.3) % 100) / 50 - 1,
-      );
-    }).listen((value) {
-      _gNotifier.value = Offset(value.$1, value.$2);
-    });
 
-    // GPS controller and stream
-    _gpsController = TextEditingController(text: 'Initializing GPS...');
-    _initGps();
+    // GPS controller: shows the sled's GPS/status only.
+    _gpsController = TextEditingController(text: 'Waiting for the sled...');
   }
 
   @override
   void dispose() {
-    _gSub?.cancel();
     _gNotifier.dispose();
-    _positionSub?.cancel();
-    _recordingSub?.cancel();
+    _bleGpsSub?.cancel();
+    _bleStatusSub?.cancel();
+    _bleConnSub?.cancel();
+    _cancelReconnect();
+    _fixUiTimer?.cancel();
     _gpsController.dispose();
     // previously disposed glow controller; nothing to dispose here
     super.dispose();
   }
 
+  /// Header power button: toggles the sled's main power.
+  Future<void> _togglePower() async {
+    final provider = context.read<SettingsProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    final ble = provider.bleService;
+    final poweredOn = _lastStatus?.powerOn ?? false;
+
+    final sent = await ble.sendCommand(
+        poweredOn ? BleService.cmdPowerOff : BleService.cmdPowerOn);
+    if (!mounted) return;
+    if (!sent) {
+      messenger.showSnackBar(SnackBar(
+        content: Text(poweredOn
+            ? 'Could not power off the sled'
+            : 'Could not power on the sled'),
+        duration: const Duration(seconds: 2),
+      ));
+      return;
+    }
+    // Ask the board so the icon reflects what actually happened.
+    final s = await ble.getStatus();
+    if (s != null && mounted) setState(() => _lastStatus = s);
+  }
+
+  /// Header rename button: writes the new name to the board (persisted in
+  /// NVS) and refreshes the local name cache so every screen picks it up.
+  Future<void> _promptRename(SettingsProvider provider) async {
+    final current =
+        provider.sledDisplayName(widget.sled.id) ?? widget.sled.name;
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => _RenameDialog(initial: current),
+    );
+    if (name == null || !mounted) return;
+    final trimmed = name.trim();
+    if (trimmed.isEmpty || trimmed == current) return;
+
+    final ble = provider.bleService;
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await ble.writeDeviceName(trimmed);
+    if (!mounted) return;
+    if (!ok) {
+      messenger.showSnackBar(const SnackBar(
+        content: Text('Could not rename the sled'),
+        duration: Duration(seconds: 2),
+      ));
+      return;
+    }
+    final mac = provider.pairedAddressFor(widget.sled.id) ?? ble.remoteId;
+    if (mac != null) await NameCache.set(mac, trimmed);
+    if (mounted) setState(() {}); // header title + connection card refresh
+    messenger.showSnackBar(SnackBar(
+      content: Text('Renamed to "$trimmed"'),
+      duration: const Duration(milliseconds: 1500),
+    ));
+    await _reconnectAfterRename();
+  }
+
+  /// The firmware reboots ~0.5 s after a rename lands. Ride out the restart
+  /// and re-establish the session so everything picks up the fresh name
+  /// advertisement.
+  Future<void> _reconnectAfterRename() async {
+    final provider = context.read<SettingsProvider>();
+    // Wait for the reboot disconnect (max ~4 s).
+    for (var i = 0; i < 8 && mounted; i++) {
+      if (!provider.isConnected) break;
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+    // Still connected: the board skipped the reboot (e.g. it is logging a
+    // ride) - nothing to recover.
+    if (!mounted || provider.isConnected) return;
+    // Give the board time to boot, then reconnect until it answers.
+    for (var i = 0; i < 20 && mounted && !provider.isConnected; i++) {
+      await Future.delayed(const Duration(seconds: 1));
+      if (!mounted) return;
+      try {
+        if (await provider.ensureConnectedToSled(widget.sled.id)) return;
+      } catch (_) {}
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final sled = widget.sled;
+    final provider = context.watch<SettingsProvider>();
+    final displayName = provider.sledDisplayName(sled.id) ?? sled.name;
+    final poweredOn = _lastStatus?.powerOn ?? false;
 
     // Build a ThemeData from the sled colors and wrap the screen so
     // the sled's color scheme is applied to this route only.
@@ -157,7 +295,26 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
       data: sledTheme,
       child: Scaffold(
         appBar: AppBar(
-          title: Text(sled.name),
+          title: Text(displayName),
+          actions: [
+            IconButton(
+              icon: Icon(
+                Icons.power_settings_new,
+                color: poweredOn
+                    ? colorScheme.onPrimary
+                    : colorScheme.onPrimary.withAlpha((0.45 * 255).round()),
+              ),
+              tooltip: poweredOn ? 'Power off sled' : 'Power on sled',
+              onPressed: provider.isConnected ? _togglePower : null,
+            ),
+            IconButton(
+              icon: const Icon(Icons.edit),
+              tooltip: 'Rename sled',
+              onPressed: provider.isConnected
+                  ? () => _promptRename(provider)
+                  : null,
+            ),
+          ],
         ),
         bottomNavigationBar: BottomNavigationBar(
           currentIndex: _selectedIndex,
@@ -237,7 +394,11 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildConnectionStatus(provider.isConnected),
+                    _buildConnectionStatus(
+                      provider,
+                      provider.isConnected,
+                      provider.isConnecting,
+                    ),
                     const SizedBox(height: 8),
                     Card(
                       elevation: 1,
@@ -375,33 +536,119 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
     );
   }
 
-  Widget _buildConnectionStatus(bool isConnected) {
+  Widget _buildConnectionStatus(
+    SettingsProvider provider,
+    bool isConnected,
+    bool isConnecting,
+  ) {
+    final String label;
+    final String subtitle;
+    final Color color;
+    final paired = provider.pairedAddressFor(widget.sled.id);
+    if (_reconnecting) {
+      label = 'Connection lost - reconnecting...';
+      subtitle = 'Attempt $_reconnectAttempts - ride is kept open';
+      color = Colors.orange;
+    } else if (isConnected) {
+      label = 'Connected';
+      subtitle = 'Board ${_shortId(provider.bleService.remoteId)}';
+      color = Colors.green;
+    } else if (isConnecting) {
+      label = 'Connecting...';
+      subtitle = provider.bleService.lastError ??
+          'Searching for the sled...';
+      color = Colors.orange;
+    } else {
+      label = 'Disconnected';
+      final error = provider.bleService.lastError;
+      if (error != null) {
+        subtitle = error;
+      } else if (paired != null) {
+        subtitle = 'Paired to board ${_shortId(paired)} — tap to connect';
+      } else {
+        subtitle = 'Not paired — tap to find and pair this sled';
+      }
+      color = Colors.grey;
+    }
+
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Container(
-              width: 12,
-              height: 12,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isConnected ? Colors.green : Colors.orange,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: (isConnected || isConnecting || _reconnecting)
+            ? null
+            : () => context.read<SettingsProvider>().connectToSled(widget.sled.id),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(shape: BoxShape.circle, color: color),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                isConnected ? 'Connected to Rodl' : 'Connecting...',
-                style: const TextStyle(fontWeight: FontWeight.w500),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+              if (!isConnected && !isConnecting && !_reconnecting)
+                const Icon(Icons.refresh, size: 18, color: Colors.grey),
+              if (isConnected && paired != null)
+                IconButton(
+                  tooltip: 'Unpair this sled',
+                  icon: const Icon(Icons.link_off, size: 18, color: Colors.grey),
+                  onPressed: () => _confirmForget(provider),
+                ),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  String _shortId(String? id) {
+    if (id == null || id.isEmpty) return '??????';
+    return id.length <= 8 ? id : id.substring(id.length - 6);
+  }
+
+  Future<void> _confirmForget(SettingsProvider provider) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Unpair this sled?'),
+        content: Text(
+          'The app will forget which board belongs to '
+          '"${widget.sled.name}" and scan for a new one next time you connect.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Unpair'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await provider.forgetSled(widget.sled.id);
+    }
   }
 
   Widget _buildSectionHeader(String title) {
@@ -919,6 +1166,8 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
   }
 
   Widget _buildSensorGraphs() {
+    final status = _lastStatus;
+
     return Column(
       children: [
         Card(
@@ -929,7 +1178,29 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('GPS Info', style: TextStyle(fontWeight: FontWeight.w600)),
+                Row(
+                  children: [
+                    const Text('GPS Info', style: TextStyle(fontWeight: FontWeight.w600)),
+                    const Spacer(),
+                    if (status != null)
+                      Text(
+                        status.powerOn ? 'Sled on' : 'Sled off',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: status.powerOn ? Colors.green : Colors.grey,
+                        ),
+                      ),
+                    if (status != null && status.isLogging)
+                      const Padding(
+                        padding: EdgeInsets.only(left: 8),
+                        child: Text(
+                          'logging',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.orange),
+                        ),
+                      ),
+                  ],
+                ),
                 const SizedBox(height: 8),
                 TextField(
                   controller: _gpsController,
@@ -941,16 +1212,18 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
             ),
           ),
         ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                icon: Icon(_isRecording ? Icons.stop : Icons.play_arrow),
-                label: Text(_isRecording ? 'Stop & Save' : 'Start Recording'),
-                onPressed: () => _toggleRecording(),
-              ),
-            ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        icon: Icon(_isRecording ? Icons.stop : Icons.play_arrow),
+                        label: Text(_isRecording ? 'Stop & Save' : 'Start Recording'),
+                        onPressed: (!_isRecording && _fixUnavailable())
+                            ? null
+                            : () => _toggleRecording(),
+                      ),
+                    ),
             const SizedBox(width: 8),
             ElevatedButton(
               onPressed: () {
@@ -973,196 +1246,338 @@ class _SledDetailScreenState extends State<SledDetailScreen> with SingleTickerPr
     );
   }
 
-  void _toggleRecording() async {
+  void _toggleRecording() {
     if (_isRecording) {
-      // stop
-      // Capture objects that depend on BuildContext before any awaits.
-      final ridesProv = context.read<RidesProvider>();
-      final messenger = ScaffoldMessenger.of(context);
-      final capturedUsername = context.read<SettingsProvider>().username;
-
-      // Stop background service if running
-      try {
-        await fg_service.stopForegroundRecording();
-      } catch (_) {}
-      if (_recordingSub != null) await _recordingSub!.cancel();
-      _recordingSub = null;
-      setState(() => _isRecording = false);
-
-      if (!mounted) return;
-
-      if (_recordedPoints.isEmpty) {
-        // If foreground service recorded points, try loading them
-        final bgPoints = await fg_service.loadBackgroundRecordedPoints();
-        if (bgPoints.isNotEmpty) {
-          _recordedPoints.addAll(bgPoints);
-        }
-
-          if (_recordedPoints.isEmpty) {
-          messenger.showSnackBar(SnackBar(content: Text('No GPS points recorded'), duration: Duration(milliseconds: 1500)));
-          return;
-        }
-      }
-
-      final startTs = _recordedPoints.first.timestamp;
-      final ride = Ride(
-        id: ridesProv.rides.length,
-        points: List<GPSPoint>.from(_recordedPoints),
-        startTime: DateTime.fromMillisecondsSinceEpoch(startTs),
-        sledId: widget.sled.id,
-        username: capturedUsername,
-      );
-      await ridesProv.addRide(ride);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ride saved'), duration: Duration(milliseconds: 1500)));
-      _recordedPoints.clear();
+      _finishRecording(sendStop: true);
     } else {
-      // start
-      _recordedPoints.clear();
-      setState(() => _isRecording = true);
+      _startRecording();
+    }
+  }
 
-      try {
-        // Ensure background permission before starting native foreground service.
-        bool canBg = false;
-        try {
-          canBg = await _ensureBackgroundPermission();
-        } catch (_) {
-          canBg = false;
-        }
+  /// The link dropped mid-ride: try to get back to the paired board for a
+  /// short grace window instead of ending the recording right away.
+  void _beginReconnect() {
+    if (_reconnecting || _finishingRecording) return;
+    _reconnecting = true;
+    _reconnectAttempts = 0;
+    _gpsController.text = 'Connection lost\nReconnecting to the sled...';
+    _reconnectDeadlineTimer = Timer(_reconnectGrace, _giveUpReconnect);
+    _tryReconnect();
+  }
 
-        if (canBg) {
-          try {
-            await fg_service.startForegroundRecording(title: 'Rodl recording', text: 'Recording ride');
-          } catch (e) {
-            if (kDebugMode) print('Could not start foreground service: $e');
+  Future<void> _tryReconnect() async {
+    if (!mounted || !_reconnecting) return;
+    _reconnectAttempts++;
+    if (mounted) setState(() {});
+    _gpsController.text =
+        'Connection lost - reconnecting...\nAttempt $_reconnectAttempts';
+
+    bool ok = false;
+    try {
+      final provider = context.read<SettingsProvider>();
+      ok = await provider.ensureConnectedToSled(widget.sled.id);
+    } catch (_) {}
+    if (!mounted || !_reconnecting) return;
+
+    if (ok) {
+      _cancelReconnect();
+      _gpsController.text =
+          'Connection restored\nWaiting for GPS data from the sled...';
+      setState(() {});
+      return;
+    }
+    _reconnectRetryTimer = Timer(_reconnectRetryInterval, _tryReconnect);
+  }
+
+  /// Grace window expired: accept the disconnect and save the ride.
+  void _giveUpReconnect() {
+    if (!mounted || !_reconnecting) return;
+    _cancelReconnect();
+    if (_bleConnected) return; // link came back by itself - keep riding
+    _finishRecording(sendStop: false, notice: 'Sled disconnected - ride saved');
+  }
+
+  void _cancelReconnect() {
+    _reconnectRetryTimer?.cancel();
+    _reconnectRetryTimer = null;
+    _reconnectDeadlineTimer?.cancel();
+    _reconnectDeadlineTimer = null;
+    _reconnecting = false;
+  }
+
+  void _startFixUiTimer() {
+    _fixUiTimer?.cancel();
+    _fixUiTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      _refreshFixUi();
+    });
+  }
+
+  /// True when the sled sent a GPS point recently enough to trust a fix.
+  bool _hasGpsFix({Duration within = const Duration(seconds: 4)}) =>
+      _lastFixAt != null && DateTime.now().difference(_lastFixAt!) <= within;
+
+  /// Connected, waited long enough, and still no fresh fix.
+  bool _fixUnavailable() {
+    if (!_bleConnected || _hasGpsFix()) return false;
+    return _connectedAt != null &&
+        DateTime.now().difference(_connectedAt!) >= const Duration(seconds: 4);
+  }
+
+  void _refreshFixUi() {
+    if (!mounted || !_bleConnected) return;
+    setState(() {
+      if (!_hasGpsFix()) {
+        if (_isRecording) {
+          if (_lastFixText.isNotEmpty) {
+            _gpsController.text = '$_lastFixText\nNo GPS fix - waiting...';
           }
         } else {
-          // Ask the user to open app settings to grant background location.
-          if (!mounted) return;
-          final open = await showDialog<bool>(
-            context: context,
-            builder: (dctx) => AlertDialog(
-              title: const Text('Background location required'),
-              content: const Text('To continue recording while the app is in the background, please grant "Always allow" location permission in app settings.'),
-              actions: [
-                TextButton(onPressed: () => Navigator.of(dctx).pop(false), child: const Text('Cancel')),
-                TextButton(onPressed: () => Navigator.of(dctx).pop(true), child: const Text('Open settings')),
-              ],
-            ),
-          );
-          if (open == true) {
-            await Geolocator.openAppSettings();
+          final waitedEnough = _connectedAt != null &&
+              DateTime.now().difference(_connectedAt!) >=
+                  const Duration(seconds: 3);
+          if (waitedEnough) {
+            _gpsController.text = 'No GPS fix\nWaiting for satellites...';
           }
-          if (kDebugMode) print('Background permission not granted - native service skipped');
         }
-
-        _recordingSub = Geolocator.getPositionStream(
-          locationSettings: const LocationSettings(accuracy: LocationAccuracy.bestForNavigation, distanceFilter: 0),
-        ).listen((p) {
-          final ts = p.timestamp.millisecondsSinceEpoch;
-          final point = GPSPoint(
-            timestamp: ts,
-            lat: p.latitude,
-            lon: p.longitude,
-            speedKmh: p.speed * 3.6,
-            altM: p.altitude,
-            sats: 0,
-            hdop: p.accuracy,
-            age: 0,
-          );
-          _recordedPoints.add(point);
-          _gpsController.text = _formatPosition(p);
-        }, onError: (e) {
-          _gpsController.text = 'Recording stream error: $e';
-        });
-      } catch (e) {
-        setState(() => _isRecording = false);
-        _gpsController.text = 'Failed to start recording: $e';
+      } else if (!_isRecording && _lastFixText.isNotEmpty) {
+        _gpsController.text = _lastFixText;
       }
-    }
+    });
   }
 
-  Future<void> _initGps() async {
-    try {
-      _gpsController.text = 'Checking location services...';
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        _gpsController.text = 'Location services are disabled.';
-        return;
-      }
+  /// Handle a GPS point received from the sled over BLE.
+  void _onBleGpsPoint(GPSPoint point) {
+    _lastFixAt = DateTime.now();
+    // Fallback when time sync did not answer: assume the point just arrived.
+    _epochOffset ??= DateTime.now().millisecondsSinceEpoch - point.timestamp;
 
-      _gpsController.text = 'Checking permissions...';
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        _gpsController.text = 'Requesting location permission...';
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          _gpsController.text = 'Location permissions are denied.';
-          return;
-        }
+    if (_isRecording) {
+      _sessionRideIndex ??= point.rideIndex;
+      if (point.rideIndex != _sessionRideIndex) {
+        // The sled started a new logging session; drop stale points.
+        _sessionRideIndex = point.rideIndex;
+        _recordedPoints.clear();
       }
-
-      if (permission == LocationPermission.deniedForever) {
-        _gpsController.text = 'Location permissions are permanently denied.';
-        return;
+      // Compare epoch-to-epoch: stored points carry the converted timestamp,
+      // so comparing the raw device millis would reject every point after
+      // the first (raw millis are always < epoch).
+      final ts = point.timestamp + _epochOffset!;
+      if (_recordedPoints.isEmpty || ts > _recordedPoints.last.timestamp) {
+        _recordedPoints.add(point.copyWith(timestamp: ts));
       }
+      _lastFixText = 'Recording ride #${point.rideIndex}\n'
+          'Sats: ${point.sats}   HDOP: ${point.hdop.toStringAsFixed(1)}\n'
+          'Speed: ${point.speedKmh.toStringAsFixed(1)} km/h   '
+          'Alt: ${point.altM.toStringAsFixed(0)} m\n'
+          'Points: ${_recordedPoints.length}';
+      _gpsController.text = _lastFixText;
+    } else {
+      _lastFixText = 'Device GPS\n'
+          'Lat: ${point.lat.toStringAsFixed(6)}   '
+          'Lon: ${point.lon.toStringAsFixed(6)}\n'
+          'Sats: ${point.sats}   HDOP: ${point.hdop.toStringAsFixed(1)}\n'
+          'Speed: ${point.speedKmh.toStringAsFixed(1)} km/h   '
+          'Alt: ${point.altM.toStringAsFixed(0)} m';
+      _gpsController.text = _lastFixText;
+      // A fresh fix can re-enable the Start Recording button.
+      setState(() {});
+    }
 
-      _gpsController.text = 'Fetching current location...';
-      final pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.bestForNavigation, distanceFilter: 0),
+    _gNotifier.value = Offset(point.accelX, point.accelY);
+  }
+
+  Future<void> _startRecording() async {
+    final provider = context.read<SettingsProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    final ble = provider.bleService;
+
+    setState(() {
+      _isRecording = true;
+      _finishingRecording = false;
+      _cancelReconnect();
+      _recordedPoints.clear();
+      _sessionRideIndex = null;
+      _epochOffset = null;
+    });
+    _gpsController.text = 'Connecting to sled...';
+
+    final connected = await provider.ensureConnectedToSled(widget.sled.id);
+    if (!connected) {
+      if (mounted) setState(() => _isRecording = false);
+      _gpsController.text =
+          'Not connected to the sled.\nPower on the sled and tap the status bar to connect.';
+      messenger.showSnackBar(const SnackBar(
+        content: Text('Could not connect to Rodl'),
+        duration: Duration(seconds: 2),
+      ));
+      return;
+    }
+
+    // The sled streams a 1 Hz GPS heartbeat while idle; wait for evidence
+    // of a fix before starting a ride (the first beat may take a moment).
+    final fixDeadline = DateTime.now().add(const Duration(seconds: 6));
+    while (mounted && !_hasGpsFix(within: const Duration(seconds: 4))) {
+      if (DateTime.now().isAfter(fixDeadline)) break;
+      await Future.delayed(const Duration(milliseconds: 250));
+    }
+    if (!mounted) return;
+    if (!_hasGpsFix(within: const Duration(seconds: 5))) {
+      setState(() => _isRecording = false);
+      _gpsController.text =
+          'No GPS fix\nCannot start a ride until the sled sees satellites.';
+      messenger.showSnackBar(const SnackBar(
+        content: Text('No GPS fix yet - the sled needs satellites first'),
+        duration: Duration(seconds: 3),
+      ));
+      return;
+    }
+
+    // Convert device millis() timestamps into epoch milliseconds.
+    _epochOffset = await ble.timeSync();
+
+    final sent = await ble.sendCommand(BleService.cmdStartLog);
+    if (!sent) {
+      if (mounted) setState(() => _isRecording = false);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not start logging on the sled')),
       );
-      _gpsController.text = _formatPosition(pos);
-
-      _gpsController.text = 'Subscribing to location updates...';
-      _positionSub = Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.bestForNavigation, distanceFilter: 0),
-      ).listen((p) {
-        _gpsController.text = _formatPosition(p);
-      }, onError: (e) {
-        _gpsController.text = 'GPS stream error: $e';
-      });
-    } catch (e, st) {
-      _gpsController.text = 'GPS error: $e';
-      // also log to console for more context when running
-      // ignore: avoid_print
-      print('GPS init error: $e\n$st');
+      return;
     }
-  }
 
-  Future<bool> _ensureBackgroundPermission() async {
     try {
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        _gpsController.text = 'Location services are disabled.';
-        return false;
+      final status = await ble.getStatus();
+      if (status != null) {
+        _lastStatus = status;
+        if (!status.isLogging) {
+          messenger.showSnackBar(const SnackBar(
+            content: Text('Sled did not confirm that it is logging'),
+            duration: Duration(seconds: 2),
+          ));
+        }
       }
+    } catch (_) {}
+    if (mounted) setState(() {});
 
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-
-      if (permission == LocationPermission.deniedForever) {
-        _gpsController.text = 'Location permissions are permanently denied.';
-        return false;
-      }
-
-      if (permission == LocationPermission.whileInUse) {
-        // Attempt to request 'always' permission; on some devices this will
-        // still require the user to grant it manually in app settings.
-        permission = await Geolocator.requestPermission();
-      }
-
-      return permission == LocationPermission.always;
+    try {
+      // Keeps the process alive while recording over BLE in the background.
+      await fg_service.clearBackgroundRecordedPoints();
+      await fg_service.startForegroundRecording(
+        title: 'Rodl recording',
+        text: 'Recording ride',
+      );
     } catch (e) {
-      _gpsController.text = 'Permission check failed: $e';
-      return false;
+      if (kDebugMode) print('Could not start foreground service: $e');
     }
   }
 
-  String _formatPosition(Position p) {
-    final time = p.timestamp.toIso8601String();
-    return 'Lat: ${p.latitude.toStringAsFixed(6)}\nLng: ${p.longitude.toStringAsFixed(6)}\nAlt: ${p.altitude.toStringAsFixed(2)} m\nSpeed: ${p.speed.toStringAsFixed(2)} m/s\nTime: $time';
+  Future<void> _finishRecording({
+    required bool sendStop,
+    String? notice,
+  }) async {
+    if (!mounted || !_isRecording || _finishingRecording) return;
+    _cancelReconnect();
+    _finishingRecording = true;
+
+    final provider = context.read<SettingsProvider>();
+    final ridesProv = context.read<RidesProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    final capturedUsername = provider.username;
+    final ble = provider.bleService;
+
+    if (sendStop) {
+      await ble.sendCommand(BleService.cmdStopLog);
+    }
+    // Give the last notifications time to arrive while still buffering.
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    if (mounted) setState(() => _isRecording = false);
+    _finishingRecording = false;
+
+    try {
+      await fg_service.stopForegroundRecording();
+    } catch (_) {}
+
+    if (!mounted) return;
+
+    if (_recordedPoints.isEmpty) {
+      messenger.showSnackBar(SnackBar(
+        content: Text(notice ?? 'No GPS points received from the sled'),
+        duration: const Duration(milliseconds: 1500),
+      ));
+      return;
+    }
+
+    final points = List<GPSPoint>.from(_recordedPoints);
+    final ride = Ride(
+      id: ridesProv.rides.length,
+      points: points,
+      startTime: DateTime.fromMillisecondsSinceEpoch(points.first.timestamp),
+      sledId: widget.sled.id,
+      username: capturedUsername,
+    );
+    await ridesProv.addRide(ride);
+    _recordedPoints.clear();
+    _sessionRideIndex = null;
+    if (!mounted) return;
+    messenger.showSnackBar(SnackBar(
+      content: Text(notice ?? 'Ride saved (${points.length} points)'),
+      duration: const Duration(milliseconds: 1500),
+    ));
+  }
+}
+
+/// Rename prompt. Owns its [TextEditingController] so the field survives the
+/// dialog's exit animation (disposing it right after `showDialog` returns
+/// throws "controller used after being disposed").
+class _RenameDialog extends StatefulWidget {
+  final String initial;
+
+  const _RenameDialog({required this.initial});
+
+  @override
+  State<_RenameDialog> createState() => _RenameDialogState();
+}
+
+class _RenameDialogState extends State<_RenameDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initial);
   }
 
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Rename sled'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        maxLength: BleService.maxNameLength,
+        decoration: const InputDecoration(
+          hintText: 'Sled name',
+          counterText: '',
+        ),
+        textInputAction: TextInputAction.done,
+        onSubmitted: (v) => Navigator.of(context).pop(v),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.of(context).pop(_controller.text),
+          child: const Text('Rename'),
+        ),
+      ],
+    );
+  }
 }

@@ -48,3 +48,12 @@ Future<List<GPSPoint>> loadBackgroundRecordedPoints() async {
   await prefs.remove(_kBgPointsKey);
   return data.map((e) => GPSPoint.fromJson(Map<String, dynamic>.from(e as Map))).toList();
 }
+
+/// Drop points persisted by the native foreground service. Rides are recorded
+/// from the sled over BLE now, so the phone-side buffer is not used anymore.
+Future<void> clearBackgroundRecordedPoints() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kBgPointsKey);
+  } catch (_) {}
+}

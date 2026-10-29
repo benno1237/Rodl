@@ -29,7 +29,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<SettingsProvider>().connect();
+      // Reconnect to the sled we were last paired with, if any. A generic
+      // scan is only done when the user taps Connect without a known sled.
+      final prov = context.read<SettingsProvider>();
+      final active = prov.activeSledId;
+      if (active != null) prov.connectToSled(active);
     });
   }
 
@@ -60,7 +64,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              _buildConnectionStatus(isConnected),
+              _buildConnectionStatus(provider, isConnected, provider.isConnecting),
               const SizedBox(height: 24),
               _buildSectionHeader('User Identifier'),
               const SizedBox(height: 12),
@@ -209,7 +213,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildConnectionStatus(bool isConnected) {
+  Widget _buildConnectionStatus(
+    SettingsProvider provider,
+    bool isConnected,
+    bool isConnecting,
+  ) {
+    final String label;
+    final String subtitle;
+    final Color color;
+    if (isConnected) {
+      label = 'Connected';
+      color = Colors.green;
+    } else if (isConnecting) {
+      label = 'Connecting...';
+      color = Colors.orange;
+    } else {
+      label = 'Disconnected';
+      color = Colors.grey;
+    }
+
+    final error = provider.bleService.lastError;
+    if (isConnected) {
+      final board = provider.bleService.remoteId;
+      subtitle = board != null ? 'Board $board' : 'Connected';
+    } else if (error != null) {
+      subtitle = error;
+    } else {
+      subtitle = 'Pair a sled from its detail screen';
+    }
+
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -220,18 +252,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Container(
               width: 12,
               height: 12,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isConnected ? Colors.green : Colors.orange,
-              ),
+              decoration: BoxDecoration(shape: BoxShape.circle, color: color),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: Text(
-                isConnected ? 'Connected to Rodl' : 'Connecting...',
-                style: const TextStyle(fontWeight: FontWeight.w500),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(fontWeight: FontWeight.w500),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ],
               ),
             ),
+            if (!isConnected && !isConnecting)
+              TextButton(
+                onPressed: () {
+                  final active = provider.activeSledId;
+                  if (active != null) {
+                    provider.connectToSled(active);
+                  } else {
+                    provider.connect();
+                  }
+                },
+                child: const Text('Connect'),
+              ),
           ],
         ),
       ),

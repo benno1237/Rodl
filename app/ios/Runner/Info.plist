@@ -56,6 +56,11 @@
 	<string>App requires location access to show your current GPS position.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>App requires background location access to record rides while the app is in the background.</string>
+	<!-- Bluetooth permission description for flutter_blue_plus -->
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>App requires Bluetooth to connect to your Rodl sled for settings and GPS recording.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>App requires Bluetooth to connect to your Rodl sled for settings and GPS recording.</string>
 	<!-- Enable background location updates -->
 	<key>UIBackgroundModes</key>
 	<array>
